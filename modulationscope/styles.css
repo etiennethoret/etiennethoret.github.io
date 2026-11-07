@@ -17,3 +17,6 @@
 .color-reference{display:flex;align-items:center;gap:9px;flex:0 0 auto;margin-top:3px;color:#9eb3c0;font-size:10px;min-height:21px}
 .color-reference button{padding:3px 7px;font-size:10px;white-space:nowrap}
 .color-reference span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+
+/* Curves / maps selector stays inside scrollable controls. */
+#displayMode,#curveAxis{min-width:0}
