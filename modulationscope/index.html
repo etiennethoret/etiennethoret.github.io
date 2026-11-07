@@ -15,7 +15,7 @@
     <div class="top-actions"><span class="state" id="state">● Micro arrêté</span><button id="toggleMicro" class="primary">Démarrer</button></div>
   </header>
   <section class="chart-panel" id="chartPanel" aria-label="Carte et marginales">
-    <div class="chart-head"><div><strong id="plotTitle">SCALE × RATE</strong><span id="plotSubtitle">Micro non actif</span></div><div class="head-buttons"><button id="freeze" disabled>Figer</button><button id="exportPng" disabled>PNG</button><button id="exportCsv" disabled>CSV</button></div></div>
+    <div class="chart-head"><div><strong id="plotTitle">TROIS PROJECTIONS · SCALE / RATE / FRÉQUENCE</strong><span id="plotSubtitle">Micro non actif</span></div><div class="head-buttons"><button id="freeze" disabled>Figer</button><button id="exportPng" disabled>PNG</button><button id="exportCsv" disabled>CSV</button></div></div>
     <div class="canvas-wrap"><canvas id="chart" role="img" aria-label="Carte d'énergie des modulations et marginales, toucher pour lire les coordonnées"></canvas></div>
     <div class="readout" id="readout">Touchez le graphique pour afficher les coordonnées X, Y et la valeur relative en dB.</div>
   </section>
@@ -23,34 +23,34 @@
   <main class="controls" id="controls">
     <section class="section">
       <h2>Visualisation</h2>
-      <div class="fields"><label>Projection<select id="projection"><option value="sr">Scale × rate</option><option value="fr">Fréquence × rate</option><option value="fs">Fréquence × scale</option><option value="tr">Temps × rate</option><option value="ts">Temps × scale</option><option value="tf">Temps × fréquence</option></select></label><label>Historique temporel<select id="timeSpan"><option value="10">10 s</option><option value="30" selected>30 s</option><option value="60">60 s</option></select></label></div>
+      <div class="fields"><label>Groupe de trois cartes<select id="projection"><option value="sr">Scale × rate / fréquence × rate / fréquence × scale</option><option value="tr">Temps × rate / temps × scale / temps × fréquence</option></select></label><label id="timeSpanLabel">Historique temporel<select id="timeSpan"><option value="10">10 s</option><option value="30" selected>30 s</option><option value="60">60 s</option></select></label></div>
     </section>
     <section class="section">
       <h2>Moteur d'analyse</h2>
       <div class="mode-switch" role="radiogroup" aria-label="Moteur d'analyse"><label><input type="radio" name="mode" value="log" checked /> Log · filtres Gabor</label><label><input type="radio" name="mode" value="lin" /> Lin · FFT 2D</label></div>
       <p id="modeNote" class="hint">Énergie de filtres spectrotemporels, fenêtres temporelles adaptées au rate.</p>
-      <div class="fields"><label>Bandes acoustiques<select id="bands"><option>32</option><option selected>64</option><option>96</option><option>128</option></select></label><label id="logCadenceControl">Cadence cible (Hz) · Log<input id="refreshHz" type="number" inputmode="decimal" min="0.2" max="30" step="0.1" value="2" /></label></div>
+      <div class="fields"><label>Bandes acoustiques<select id="bands"><option>32</option><option>64</option><option>96</option><option selected>128</option></select></label><label id="logCadenceControl">Cadence cible (Hz) · Log<input id="refreshHz" type="number" inputmode="decimal" min="0.2" max="30" step="0.1" value="2" /></label></div>
     </section>
 
     <section class="section" id="logSettings">
       <h2>Log · filtres Gabor multirésolution</h2>
       <div class="fields">
         <label>Nombre de cycles par rate<input id="cycles" type="number" min="1" max="12" step="0.1" value="3" /></label>
-        <label>Direction des modulations<select id="direction"><option value="both">Les deux</option><option value="up">Montantes</option><option value="down">Descendantes</option></select></label>
+        <label id="directionControl">Direction des modulations<select id="direction"><option value="both">Les deux</option><option value="up">Montantes</option><option value="down">Descendantes</option></select></label>
       </div>
       <p class="hint">Les cycles règlent la sélectivité : T(rate) = cycles / rate. Plus de cycles augmente la sélectivité, mais allonge la fenêtre.</p>
-      <label class="full">Définition des grilles<select id="gridMode"><option value="auto" selected>Grilles automatiques</option><option value="custom">Vecteurs personnalisés</option></select></label>
+      <label class="full">Définition des grilles<select id="gridMode"><option value="auto">Grilles automatiques</option><option value="custom" selected>Référence Thoret et al. (2021) · vecteurs</option></select></label>
       <div id="automaticGrids" class="fields spaced-fields">
         <label>Rate maximale (Hz)<select id="maxRate"><option>16</option><option selected>32</option><option>64</option><option>128</option></select></label>
         <label>Nombre de rates<select id="ratesCount"><option selected>7</option><option>13</option><option>19</option><option>31</option></select></label>
         <label>Nombre de scales<select id="scalesCount"><option selected>6</option><option>9</option><option>17</option><option>25</option></select></label>
       </div>
       <div id="customGrids" class="hidden">
-        <label class="full">Vecteur de rates (Hz ; séparateur « ; »)<textarea id="ratesVector" rows="2" spellcheck="false">0.5;1;2;4;8;16;32</textarea></label>
-        <label class="full">Vecteur de scales (cycles/octave)<textarea id="scalesVector" rows="2" spellcheck="false">0;0.5;1;2;3;4</textarea></label>
-        <p class="hint">2 à 64 valeurs croissantes par vecteur. Rates : 0,5–128 Hz ; scales : 0–4 cyc/oct. La fréquence maximale des rates est déduite du vecteur et configure aussi la STFT.</p>
+        <label class="full">Vecteur de rates signés (Hz ; négatifs = direction opposée)<textarea id="ratesVector" rows="3" spellcheck="false">-32;-22.6;-16;-11.3;-8;-5.70;-4;-2;-1;-0.5;-0.25;0.25;0.5;1;2;4;5.70;8;11.3;16;22.6;32</textarea></label>
+        <label class="full">Vecteur de scales (cycles/octave)<textarea id="scalesVector" rows="2" spellcheck="false">0.71;1;1.41;2;2.83;4;5.66;8</textarea></label>
+        <p class="hint">Grille du code associé à Thoret et al., Nature Human Behaviour (2021) : 22 rates signés de −32 à +32 Hz et 8 scales de 0,71 à 8 cyc/oct. Saisie : 2 à 64 valeurs croissantes, rates non nuls entre −128 et +128 Hz, scales entre 0 et 8. La rate absolue maximale adapte la STFT.</p>
       </div>
-      <p id="gridSummary" class="hint"></p>
+      <p class="hint" id="paperNote">Grilles et cadence spectrotemporelle inspirées des paramètres de Thoret et al. (2021). La version web utilise un frontal STFT et des filtres Gabor simplifiés : elle n’est PAS une reproduction numérique identique du modèle cochléaire NSL de l’article.</p><p id="gridSummary" class="hint"></p>
       <details class="advanced-panel" id="logAdvanced">
         <summary>Avancé · durée d’intégration maximale (facultatif)</summary>
         <div class="advanced-body">

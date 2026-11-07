@@ -1,7 +1,7 @@
 'use strict';
 (() => {
 const $=id=>document.getElementById(id);
-const plot=$('chart'),ctx=plot.getContext('2d',{alpha:false});
+let plot=$('chart'),ctx=plot.getContext('2d',{alpha:false});
 const state={running:false,frozen:false,worker:null,stream:null,audioCtx:null,source:null,recorder:null,
   config:null,data:null,history:[],current:null,projection:'sr',span:30,selected:null,
   timeLast:null,observedHz:null,generation:0,plotRect:null,dims:null,restartTimeout:null};
@@ -34,10 +34,12 @@ function configFromUI(){
   if(cfg.capEnabled&&(!Number.isFinite(cfg.integration)||cfg.integration<.1||cfg.integration>20))
     throw Error('Plafond d’intégration : 0,1 à 20 s');
   if(cfg.gridMode==='custom'){
-    cfg.ratesVector=validateVector($('ratesVector').value,'Rates',.5,128);
-    cfg.scalesVector=validateVector($('scalesVector').value,'Scales',0,4);
+    cfg.ratesVector=validateVector($('ratesVector').value,'Rates',-128,128);
+    if(cfg.ratesVector.some(r=>r===0))throw Error('Rates : zéro interdit');
+    if(cfg.ratesVector.some(r=>Math.abs(r)<.25))throw Error('Rates : magnitude minimale 0,25 Hz');
+    cfg.scalesVector=validateVector($('scalesVector').value,'Scales',0,8);
     if(!cfg.ratesVector||!cfg.scalesVector)throw Error('Saisir les deux vecteurs : rates et scales');
-    cfg.maxRate=cfg.ratesVector.at(-1);
+    cfg.maxRate=Math.max(...cfg.ratesVector.map(Math.abs));
   }
  }else{
   if(!Number.isFinite(cfg.fftWindow)||cfg.fftWindow<.1||cfg.fftWindow>20)
@@ -56,9 +58,10 @@ function updateGridControls(){
  $('customGrids').classList.toggle('hidden',!custom);
  $('capField').classList.toggle('hidden',!$('capEnabled').checked);
  $('linRefreshField').classList.toggle('hidden',!$('linRefreshLimit').checked);
+ $('directionControl').classList.toggle('hidden',custom);
  $('gridSummary').textContent=custom
- ? 'Vecteurs personnalisés : ils remplacent les paramètres de grille automatique. La STFT se règle selon la rate maximale saisie.'
- : 'Grilles automatiques : rates logarithmiques de 0,5 Hz au maximum choisi ; scales de 0 à 4 cyc/oct.';
+ ? 'Grille du papier 2021 : les 22 rates signés intègrent les deux directions, et les 8 scales couvrent 0,71 à 8 cyc/oct. Les filtres restent une approximation Gabor.'
+ : 'Grilles automatiques : rates positifs logarithmiques, scales de 0 à 4 cyc/oct. La direction est sélectionnable.';
 }
 function updateMode(){
  const lin=document.querySelector('input[name=mode]:checked').value==='lin';

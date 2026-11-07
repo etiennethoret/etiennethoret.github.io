@@ -20,7 +20,7 @@ function logspace(a,b,n){return Array.from({length:n},(_,i)=>a*Math.pow(b/a,i/(n
 function mkAxes(){const rates=cfg.ratesVector||logspace(.5,cfg.maxRate,cfg.ratesCount);const scales=cfg.scalesVector||(cfg.scalesCount===6?[0,.5,1,2,3,4]:linspace(0,4,cfg.scalesCount));return {rates,scales,acoustic:logspace(minHz,maxHz,cfg.bands)};}
 function reset(){samples=[];frames=[];sampleClock=0;framesSeen=0;lastLinearAt=-1;lastLogAnalysis=0;latestRms=-90;
   fftSize=cfg.mode==='log'?(cfg.maxRate>64?256:cfg.maxRate>32?512:2048):cfg.fftSize;
-  hop=cfg.mode==='log'?(cfg.maxRate>64?64:cfg.maxRate>32?128:256):Math.max(32,Math.round(fftSize*(1-cfg.stftOverlap/100)/32)*32);
+  hop=cfg.mode==='log'?(cfg.maxRate>64?64:cfg.maxRate>32?128:Math.round(cfg.sampleRate/250)):Math.max(32,Math.round(fftSize*(1-cfg.stftOverlap/100)/32)*32);
   frameHz=cfg.sampleRate/hop;nfftBands=pow2(cfg.bands);
   hann=Float64Array.from({length:fftSize},(_,i)=>.5-.5*Math.cos(2*Math.PI*i/(fftSize-1)));
   const oct=OCT, hzStep=cfg.sampleRate/fftSize;
@@ -47,7 +47,7 @@ function computeFrame(){const recent=samples.slice(-fftSize);let e=0;
   frames.push(row);framesSeen++;
   // Keep enough history for the longest selected Gabor window, up to 24 s
   // with 12 cycles at 0.5 Hz. A disabled cap no longer silently truncates it.
-  const slowest=cfg.mode==='log'?(cfg.ratesVector?.[0]||.5):1;
+  const slowest=cfg.mode==='log'?(cfg.ratesVector?Math.min(...cfg.ratesVector.map(Math.abs)):.5):1;
   const required=cfg.mode==='log'?(cfg.capEnabled?
     Math.min(cfg.integration,cfg.cycles/slowest):cfg.cycles/slowest):cfg.fftWindow;
   const maxFrames=Math.min(26000,Math.ceil((required+1)*frameHz)+20);
@@ -71,7 +71,7 @@ function receiveAudio(chunk){
 }
 function linearCount(){return Math.max(16,Math.min(2048,pow2(cfg.fftWindow*frameHz)));}
 function gaussianKernels(rates){return rates.map(r=>{
-  const seconds=cfg.capEnabled?Math.min(cfg.integration,cfg.cycles/r):cfg.cycles/r;
+  const seconds=cfg.capEnabled?Math.min(cfg.integration,cfg.cycles/Math.abs(r)):cfg.cycles/Math.abs(r);
   const n=Math.max(8,Math.round(seconds*frameHz));
   const re=new Float64Array(n),im=new Float64Array(n);let z=0,dcR=0,dcI=0;
   for(let k=0;k<n;k++){const lag=(n-1-k)/frameHz,w=.5-.5*Math.cos(2*Math.PI*(k+.5)/n);z+=w;re[k]=w*Math.cos(2*Math.PI*r*lag);im[k]=w*Math.sin(2*Math.PI*r*lag);dcR+=re[k];dcI+=im[k];}
@@ -124,7 +124,11 @@ function calculateLog(){
         ur+=tr*a+ti*b;ui+=ti*a-tr*b;dr+=tr*a-ti*b;di+=tr*b+ti*a;
       }
       const up=ur*ur+ui*ui,down=dr*dr+di*di;
-      const energy=cfg.direction==='up'?up:cfg.direction==='down'?down:(up+down)/2;
+      // Signed reference rates encode opposite spectrotemporal orientations.
+      // Current Gabor frontend is an approximation of the published NSL filters.
+      const energy=cfg.ratesVector?.some(v=>v<0)
+        ? (rates[ri]<0?down:up)
+        : cfg.direction==='up'?up:cfg.direction==='down'?down:(up+down)/2;
       sr[si][ri]+=energy;fr[fi][ri]+=energy;fs[fi][si]+=energy;
     }
   }
