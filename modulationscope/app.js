@@ -204,12 +204,13 @@ $('exportCsv').onclick=()=>{const a=state.current,d=state.data;if(!a||!d)return;
  download(`ModulationScope_${state.projection}_${Date.now()}.csv`,new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'}));
 };
 const panel=$('chartPanel'),splitter=$('splitter'),app=$('app');let dragging=false;
-function resizeChart(height){const available=app.getBoundingClientRect().height-95;const px=clamp(height,150,Math.max(170,available-120));panel.style.height=`${px}px`;localStorage.setItem('modulationscope-panel-height',String(px));updateChart();}
+function resizeChart(height){const available=app.getBoundingClientRect().height-95;const px=clamp(height,150,Math.max(170,available-120));panel.style.height=`${px}px`;try { localStorage.setItem('modulationscope-panel-height',String(px)); } catch (_) { /* storage disabled */ }updateChart();}
 splitter.addEventListener('pointerdown',e=>{dragging=true;splitter.setPointerCapture(e.pointerId);e.preventDefault();});
 splitter.addEventListener('pointermove',e=>{if(dragging){resizeChart(e.clientY-app.getBoundingClientRect().top-60);e.preventDefault();}});
 splitter.addEventListener('pointerup',()=>{dragging=false;});splitter.addEventListener('pointercancel',()=>{dragging=false;});
 splitter.addEventListener('keydown',e=>{if(e.key==='ArrowUp'||e.key==='ArrowDown'){resizeChart(panel.getBoundingClientRect().height+(e.key==='ArrowDown'?20:-20));e.preventDefault();}});
-const saved=Number(localStorage.getItem('modulationscope-panel-height'));
+let saved = 0;
+try { saved=Number(localStorage.getItem('modulationscope-panel-height')); } catch (_) { /* storage disabled */ }
 if(Number.isFinite(saved)&&saved>0)resizeChart(saved);
 new ResizeObserver(updateChart).observe(plot.parentElement);
 window.addEventListener('resize',updateChart);
