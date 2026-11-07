@@ -74,7 +74,7 @@ function gaussianKernels(rates){return rates.map(r=>{
   const seconds=cfg.capEnabled?Math.min(cfg.integration,cfg.cycles/Math.abs(r)):cfg.cycles/Math.abs(r);
   const n=Math.max(8,Math.round(seconds*frameHz));
   const re=new Float64Array(n),im=new Float64Array(n);let z=0,dcR=0,dcI=0;
-  for(let k=0;k<n;k++){const lag=(n-1-k)/frameHz,w=.5-.5*Math.cos(2*Math.PI*(k+.5)/n);z+=w;re[k]=w*Math.cos(2*Math.PI*r*lag);im[k]=w*Math.sin(2*Math.PI*r*lag);dcR+=re[k];dcI+=im[k];}
+  for(let k=0;k<n;k++){const lag=(n-1-k)/frameHz,w=.5-.5*Math.cos(2*Math.PI*(k+.5)/n);z+=w;re[k]=w*Math.cos(2*Math.PI*Math.abs(r)*lag);im[k]=w*Math.sin(2*Math.PI*Math.abs(r)*lag);dcR+=re[k];dcI+=im[k];}
   dcR/=z;dcI/=z;
   for(let k=0;k<n;k++){const w=.5-.5*Math.cos(2*Math.PI*(k+.5)/n);re[k]=2*(re[k]-w*dcR)/z;im[k]=2*(im[k]-w*dcI)/z;}
   return {n,re,im,seconds:n/frameHz};

@@ -9,3 +9,6 @@
 .toggle-row{display:flex;align-items:center;gap:9px;color:#d9e9ef;line-height:1.4}
 .toggle-row input{margin:0;width:17px;height:17px;accent-color:#65ddc6}
 .advanced-body .full{margin-top:10px}
+
+/* Responsive triple maps within the pinned chart. */
+@media(max-width:819px){.chart-panel{height:var(--chart-height,68%)}}

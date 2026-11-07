@@ -206,62 +206,110 @@ function formatAxis(v,code,axis){const kind=code[0]==='t'&&axis==='x'?'time':cod
  if(kind==='time')return `${v.toFixed(1)} s`;if(kind==='scale')return `${v.toFixed(2)} cyc/oct`;
  if(kind==='rate')return `${v.toFixed(2)} Hz`;return`${v.toFixed(1)} Hz`;
 }
-function tickValues(values,code,axis){if(code[0]==='t'&&axis==='x')return[-state.span,-.75*state.span,-.5*state.span,-.25*state.span,0];
- const kind=code==='sr'?(axis==='x'?'rate':'scale'):code==='fr'?(axis==='x'?'rate':'frequency'):
- code==='fs'?(axis==='x'?'scale':'frequency'):code==='tr'?'rate':code==='ts'?'scale':'frequency';
- if(kind==='scale')return[0,1,2,3,4];if(kind==='frequency')return[125,500,2000,8000];
- const last=values.at(-1)||32;return last<=16?[.5,2,8,16]:last<=32?[.5,2,8,32]:last<=64?[.5,2,8,32,64]:[.5,2,8,32,128];
+
+function tickValues(values,code,axis){
+ if(code[0]==='t'&&axis==='x')return[-state.span,-state.span/2,0];
+ const axisName=axisLabels[code][axis==='x'?0:1],min=values[0],max=values.at(-1);
+ let ticks;
+ if(axisName.startsWith('Rate'))ticks=min<0?[-128,-64,-32,-16,-4,-1,1,4,16,32,64,128]:[0,.5,1,2,4,8,16,32,64,128];
+ else if(axisName.startsWith('Scale'))ticks=max>4?[0,.71,1,2,4,5.66,8]:[0,.5,1,2,3,4];
+ else ticks=[125,500,2000,8000];
+ ticks=ticks.filter(v=>v>=min-1e-7&&v<=max+1e-7);
+ if(ticks.length>4)return Array.from({length:4},(_,i)=>ticks[Math.round(i*(ticks.length-1)/3)]);
+ return ticks;
 }
 function closest(values,target){let best=0,err=Infinity;for(let i=0;i<values.length;i++){const d=Math.abs(values[i]-target);if(d<err){err=d;best=i;}}return best;}
-function updateChart(){const w=plot.clientWidth,h=plot.clientHeight;if(!w||!h)return;
- const dpr=Math.min(2,devicePixelRatio||1);if(plot.width!==Math.round(w*dpr)||plot.height!==Math.round(h*dpr)){plot.width=Math.round(w*dpr);plot.height=Math.round(h*dpr);}ctx.setTransform(dpr,0,0,dpr,0,0);
- ctx.fillStyle='#0d1620';ctx.fillRect(0,0,w,h);
- $('plotTitle').textContent=titles[state.projection];
- const d=state.data,projection=selectedProjection();$('plotSubtitle').textContent=d?(d.mode==='lin'?'FFT 2D':'Gabor multirésolution'):'En attente du microphone';
- const L=w<430?48:64,R=Math.max(L+45,w-(w<430?89:122)),T=12,B=Math.max(T+52,h-91),verticalX=R+13,verticalW=Math.min(46,w-verticalX-9),horizontalT=B+27,horizontalB=Math.min(h-30,horizontalT+42);
- state.plotRect={L,R,T,B};ctx.fillStyle='#13202d';ctx.fillRect(L,T,R-L,B-T);ctx.fillRect(verticalX,T,verticalW,B-T);ctx.fillRect(L,horizontalT,R-L,horizontalB-horizontalT);
- if(!projection){label('Démarre le microphone pour afficher les modulations.',L+8,T+27,'left','#a5bac8',12);state.current=null;return;}
- state.current=projection;
- const db=relativeDb(projection.map),rows=db.length,cols=db[0]?.length||0;if(!rows||!cols)return;
- const cw=(R-L)/cols,ch=(B-T)/rows;
- for(let i=0;i<rows;i++)for(let j=0;j<cols;j++){
-  const v=db[i][j];if(Number.isFinite(v)){ctx.fillStyle=blend(v);ctx.fillRect(L+j*cw,T+(rows-i-1)*ch,Math.ceil(cw+.2),Math.ceil(ch+.2));}
- }
- ctx.strokeStyle='#5b7180';ctx.lineWidth=1;ctx.strokeRect(L+.5,T+.5,R-L,B-T);
- const mx=dbVector(marginal(projection.map,'x')),my=dbVector(marginal(projection.map,'y')),xr=range(mx),yr=range(my);
- drawLine(mx.map((v,j)=>Number.isFinite(v)?[L+(j+.5)*cw,horizontalB-clamp((v-xr[0])/(xr[1]-xr[0]),0,1)*(horizontalB-horizontalT)]:null),'#65ddc6',1.7);
- drawLine(my.map((v,i)=>Number.isFinite(v)?[verticalX+clamp((v-yr[0])/(yr[1]-yr[0]),0,1)*verticalW,T+(rows-i-.5)*ch]:null),'#65ddc6',1.7);
- label('Marg. X',L+3,h-9,'left','#9fb9c7',10);label(`${xr[0].toFixed(1)}…${xr[1].toFixed(1)} dB`,R,h-9,'right','#9fb9c7',10);
- label(`Y ${yr[0].toFixed(0)}…${yr[1].toFixed(0)} dB`,verticalX,T-2,'left','#9fb9c7',9);
- const labels=axisLabels[state.projection];label(labels[0],(L+R)/2,B+22,'center','#d9e7ee',10);
- ctx.save();ctx.translate(12,(T+B)/2);ctx.rotate(-Math.PI/2);label(labels[1],0,0,'center','#d9e7ee',10);ctx.restore();
- for(const value of tickValues(projection.xs,state.projection,'x')){
-  const j=closest(projection.xs,value),x=L+(j+.5)*cw;if(x>=L&&x<=R)label(formatShort(value),x,B+11,'center','#92acba',9);
- }
- for(const value of tickValues(projection.ys,state.projection,'y')){
-  const i=closest(projection.ys,value),y=T+(rows-i-.5)*ch;if(y>=T&&y<=B)label(formatShort(value),L-5,y+3,'right','#92acba',9);
- }
- if(state.selected&&state.selected.projection===state.projection){const j=clamp(state.selected.j,0,cols-1),i=clamp(state.selected.i,0,rows-1),x=L+(j+.5)*cw,y=T+(rows-i-.5)*ch;
-  ctx.strokeStyle='#ffffff';ctx.lineWidth=1.1;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(R,y);ctx.moveTo(x,T);ctx.lineTo(x,B);ctx.stroke();
-  ctx.beginPath();ctx.arc(x,y,4,0,Math.PI*2);ctx.stroke();const v=db[i][j];
-  $('readout').textContent=`X ${formatAxis(projection.xs[j],state.projection,'x')} · Y ${formatAxis(projection.ys[i],state.projection,'y')} · ${Number.isFinite(v)?v.toFixed(2)+' dB':'non mesuré'}`;
- }else $('readout').textContent='Touchez le graphique pour afficher les coordonnées X, Y et les dB relatifs.';
- state.dims={rows,cols};
+function formatShort(v){if(v===0)return '0';if(Math.abs(v)>=1000)return (v/1000).toFixed(0)+'k';if(Math.abs(v)<1)return v.toFixed(2);return Number.isInteger(v)?''+v:v.toFixed(1);}
+function projectionForCode(code){
+ const d=state.data;if(!d)return null;
+ const axes=d.axes;
+ if(code==='sr')return {xs:axes.rates,ys:axes.scales,map:d.sr};
+ if(code==='fr')return d.fr?{xs:axes.rates,ys:axes.acoustic,map:d.fr}:null;
+ if(code==='fs')return d.fs?{xs:axes.scales,ys:axes.acoustic,map:d.fs}:null;
+ if(code[0]==='t'&&d.mode==='log')return timeProjection(code);
+ return null;
 }
-function formatShort(v){if(v===0)return '0';if(v>=1000)return`${(v/1000).toFixed(v%1000?1:0)}k`;return Number.isInteger(v)?`${v}`:Math.abs(v)>=10?v.toFixed(0):v.toFixed(1);}
-function selectPoint(e){const rect=plot.getBoundingClientRect(),x=e.clientX-rect.left,y=e.clientY-rect.top,r=state.plotRect,dim=state.dims;
- if(!r||!dim||x<r.L||x>=r.R||y<r.T||y>=r.B)return;
- const j=clamp(Math.floor((x-r.L)/(r.R-r.L)*dim.cols),0,dim.cols-1),i=dim.rows-1-clamp(Math.floor((y-r.T)/(r.B-r.T)*dim.rows),0,dim.rows-1);
- state.selected={i,j,projection:state.projection};updateChart();}
-plot.addEventListener('pointerdown',e=>{selectPoint(e);plot.setPointerCapture(e.pointerId);});plot.addEventListener('pointermove',e=>{if(e.buttons)selectPoint(e);});
-function download(name,blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
-$('exportPng').onclick=()=>plot.toBlob(b=>{if(b)download(`ModulationScope_${state.projection}_${Date.now()}.png`,b);},'image/png');
-$('exportCsv').onclick=()=>{const a=state.current,d=state.data;if(!a||!d)return;
- const db=relativeDb(a.map),lines=['projection,x_value,y_value,x_unit,y_unit,power_linear,relative_db,mode'];
- const units=axisLabels[state.projection].map(x=>x.match(/\(([^)]+)\)/)?.[1]||'');
- for(let i=0;i<a.ys.length;i++)for(let j=0;j<a.xs.length;j++){
- const v=a.map[i][j],dec=db[i][j];lines.push([state.projection,a.xs[j],a.ys[i],units[0],units[1],Number.isFinite(v)?v:'NaN',Number.isFinite(dec)?dec:'NaN',d.mode].join(','));}
- download(`ModulationScope_${state.projection}_${Date.now()}.csv`,new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+function panelsForView(){
+ const group=state.projection==='tr'?['tr','ts','tf']:['sr','fr','fs'];
+ return group.map(code=>({code,projection:projectionForCode(code)}));
+}
+function updateChart(){
+ const w=plot.clientWidth,h=plot.clientHeight;if(!w||!h)return;
+ const dpr=Math.min(2,devicePixelRatio||1);
+ if(plot.width!==Math.round(w*dpr)||plot.height!==Math.round(h*dpr)){plot.width=Math.round(w*dpr);plot.height=Math.round(h*dpr);}
+ ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#0d1620';ctx.fillRect(0,0,w,h);
+ const panels=panelsForView(),vertical=w<820,wide=vertical?w:w/3,tall=vertical?h/3:h;
+ state.currentPanels=panels;state.plotRects=[];
+ $('plotTitle').textContent=state.projection==='tr'
+  ? 'TEMPS × RATE / TEMPS × SCALE / TEMPS × FRÉQUENCE'
+  : 'SCALE × RATE / FRÉQUENCE × RATE / FRÉQUENCE × SCALE';
+ $('plotSubtitle').textContent=state.data?(state.data.mode==='lin'?'FFT 2D':'Gabor multirésolution'):'Micro non actif';
+ let readout='Touchez un des trois cadrans pour lire X, Y et les dB relatifs.';
+ for(let p=0;p<3;p++){
+  const code=panels[p].code,projection=panels[p].projection,ox=vertical?0:p*wide,oy=vertical?p*tall:0;
+  const left=ox+(wide<290?34:42),right=ox+wide-38,top=oy+21,bottom=oy+tall-45;
+  state.plotRects.push({left,right,top,bottom,code,projection});
+  ctx.fillStyle=p%2?'#0f1c26':'#0e1923';ctx.fillRect(ox,oy,wide,tall);
+  if(p>0){ctx.strokeStyle='#263746';ctx.beginPath();if(vertical){ctx.moveTo(0,oy);ctx.lineTo(w,oy);}else{ctx.moveTo(ox,0);ctx.lineTo(ox,h);}ctx.stroke();}
+  label(titles[code],ox+wide/2,oy+12,'center','#e5eef4',10);
+  if(right-left<35||bottom-top<18)continue;
+  ctx.fillStyle='#142533';ctx.fillRect(left,top,right-left,bottom-top);
+  if(!projection||!projection.map){
+   label(state.data?.mode==='lin'?'Indisponible en FFT 2D':'En attente du micro',left+3,top+20,'left','#8ca5b5',10);continue;
+  }
+  const db=relativeDb(projection.map),rows=db.length,cols=db[0]?.length||0;
+  if(!rows||!cols)continue;
+  const cw=(right-left)/cols,ch=(bottom-top)/rows;
+  for(let i=0;i<rows;i++)for(let j=0;j<cols;j++){
+   const v=db[i][j];if(Number.isFinite(v)){ctx.fillStyle=blend(v);ctx.fillRect(left+j*cw,top+(rows-i-1)*ch,Math.ceil(cw+.1),Math.ceil(ch+.1));}
+  }
+  ctx.strokeStyle='#607687';ctx.lineWidth=.7;ctx.strokeRect(left+.5,top+.5,right-left,bottom-top);
+  const mx=dbVector(marginal(projection.map,'x')),my=dbVector(marginal(projection.map,'y')),xr=range(mx),yr=range(my);
+  const ht=bottom+14,hb=bottom+25,vx=right+5,vw=15;
+  ctx.fillStyle='#172a35';ctx.fillRect(left,ht,right-left,hb-ht);ctx.fillRect(vx,top,vw,bottom-top);
+  drawLine(mx.map((v,j)=>Number.isFinite(v)?[left+(j+.5)*cw,hb-clamp((v-xr[0])/(xr[1]-xr[0]),0,1)*(hb-ht)]:null),'#65ddc6',1.2);
+  drawLine(my.map((v,i)=>Number.isFinite(v)?[vx+clamp((v-yr[0])/(yr[1]-yr[0]),0,1)*vw,top+(rows-i-.5)*ch]:null),'#65ddc6',1.2);
+  for(const value of tickValues(projection.xs,code,'x')){const j=closest(projection.xs,value);label(formatShort(value),left+(j+.5)*cw,bottom+9,'center','#a8bac6',8);}
+  for(const value of tickValues(projection.ys,code,'y')){const i=closest(projection.ys,value);label(formatShort(value),left-3,top+(rows-i-.5)*ch+2,'right','#a8bac6',8);}
+  const axes=axisLabels[code];label(axes[0],(left+right)/2,oy+tall-7,'center','#c0d3dc',9);
+  ctx.save();ctx.translate(ox+10,(top+bottom)/2);ctx.rotate(-Math.PI/2);label(axes[1],0,0,'center','#c0d3dc',9);ctx.restore();
+  if(state.selected?.code===code){
+   const i=clamp(state.selected.i,0,rows-1),j=clamp(state.selected.j,0,cols-1),xx=left+(j+.5)*cw,yy=top+(rows-i-.5)*ch;
+   ctx.strokeStyle='#fff';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(left,yy);ctx.lineTo(right,yy);ctx.moveTo(xx,top);ctx.lineTo(xx,bottom);ctx.stroke();
+   ctx.beginPath();ctx.arc(xx,yy,3,0,2*Math.PI);ctx.stroke();
+   const v=db[i][j];
+   readout=titles[code]+' · X '+formatAxis(projection.xs[j],code,'x')+' · Y '+formatAxis(projection.ys[i],code,'y')+' · '+(Number.isFinite(v)?v.toFixed(2)+' dB':'non mesuré');
+  }
+ }
+ $('readout').textContent=readout;
+}
+function selectPoint(e){
+ const bounds=plot.getBoundingClientRect(),x=e.clientX-bounds.left,y=e.clientY-bounds.top;
+ for(const rect of state.plotRects||[]){
+  const {left,right,top,bottom,code,projection}=rect;
+  if(!projection||x<left||x>=right||y<top||y>=bottom)continue;
+  const rows=projection.map.length,cols=projection.map[0]?.length||0;
+  if(!rows||!cols)continue;
+  const j=clamp(Math.floor((x-left)/(right-left)*cols),0,cols-1);
+  const i=rows-1-clamp(Math.floor((y-top)/(bottom-top)*rows),0,rows-1);
+  state.selected={code,i,j};updateChart();return;
+ }
+}
+plot.addEventListener('pointerdown',e=>{selectPoint(e);plot.setPointerCapture(e.pointerId);});
+plot.addEventListener('pointermove',e=>{if(e.buttons)selectPoint(e);});
+function download(name,blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
+$('exportPng').onclick=()=>plot.toBlob(b=>{if(b)download('ModulationScope_three_panels_'+Date.now()+'.png',b);},'image/png');
+$('exportCsv').onclick=()=>{
+ const panels=panelsForView(),lines=['projection,x_value,y_value,x_unit,y_unit,power_linear,relative_db,mode'];
+ for(const item of panels){
+  const code=item.code,p=item.projection;if(!p)continue;
+  const db=relativeDb(p.map),units=axisLabels[code].map(s=>s.match(/\(([^)]+)\)/)?.[1]||'');
+  for(let i=0;i<p.ys.length;i++)for(let j=0;j<p.xs.length;j++){
+   const v=p.map[i][j],dec=db[i][j];
+   lines.push([code,p.xs[j],p.ys[i],units[0],units[1],Number.isFinite(v)?v:'NaN',Number.isFinite(dec)?dec:'NaN',state.data.mode].join(','));
+  }
+ }
+ download('ModulationScope_three_panels_'+Date.now()+'.csv',new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'}));
 };
 const panel=$('chartPanel'),splitter=$('splitter'),app=$('app');let dragging=false;
 function resizeChart(height){const available=app.getBoundingClientRect().height-95;const px=clamp(height,150,Math.max(170,available-120));panel.style.height=`${px}px`;try { localStorage.setItem('modulationscope-panel-height',String(px)); } catch (_) { /* storage disabled */ }updateChart();}
