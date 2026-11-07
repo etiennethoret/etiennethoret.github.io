@@ -1,0 +1,29 @@
+name: Test Modulation Scope Web
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'modulationscope/**'
+      - 'tests/modulation-scope-web.cjs'
+      - '.github/workflows/test-modulationscope.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check browser JavaScript syntax
+        run: |
+          node --check modulationscope/app.js
+          node --check modulationscope/dsp-worker.js
+          node --check modulationscope/capture-processor.js
+      - name: Run 2021 preset DSP smoke test
+        run: node tests/modulation-scope-web.cjs
