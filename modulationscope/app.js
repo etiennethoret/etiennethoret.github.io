@@ -6,8 +6,8 @@ const state={running:false,frozen:false,worker:null,stream:null,audioCtx:null,so
   config:null,data:null,history:[],current:null,projection:'sr',span:30,selected:null,
   timeLast:null,observedHz:null,generation:0,plotRect:null,dims:null,restartTimeout:null};
 const axisLabels={sr:['Rate (Hz)','Scale (cyc/oct)'],fr:['Rate (Hz)','Fréquence (Hz)'],fs:['Scale (cyc/oct)','Fréquence (Hz)'],
-  tr:['Temps relatif (s)','Rate (Hz)'],ts:['Temps relatif (s)','Scale (cyc/oct)'],tf:['Temps relatif (s)','Fréquence (Hz)']};
-const titles={sr:'SCALE × RATE',fr:'FRÉQUENCE × RATE',fs:'FRÉQUENCE × SCALE',tr:'TEMPS × RATE',ts:'TEMPS × SCALE',tf:'TEMPS × FRÉQUENCE'};
+  tr:['Temps relatif (s)','Rate (Hz)'],ts:['Temps relatif (s)','Scale (cyc/oct)'],tf:['Temps relatif (s)','Fréquence (Hz)'],nhb:['Temps relatif (s)','Fréquence cochléaire (Hz)']};
+const titles={sr:'SCALE × RATE',fr:'FRÉQUENCE × RATE',fs:'FRÉQUENCE × SCALE',tr:'TEMPS × RATE',ts:'TEMPS × SCALE',tf:'TEMPS × FRÉQUENCE · ÉNERGIE STRF',nhb:'TEMPS × FRÉQUENCE · SPECTROGRAMME NHB'};
 const viridis=['#440154','#482878','#3e4989','#31688e','#26828e','#1f9e89','#35b779','#6ece58','#b5de2b','#fde725'];
 const rgb=viridis.map(c=>[parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)]);
 const values=[...document.querySelectorAll('input[type=number],select,textarea')];
@@ -27,7 +27,7 @@ function configFromUI(){
   gridMode:$('gridMode').value,maxRate:n('maxRate'),
   ratesCount:n('ratesCount'),scalesCount:n('scalesCount'),direction:$('direction').value,
   fftSize:n('fftSize'),fftWindow:n('fftWindow'),overlap:n('overlap'),stftOverlap:n('stftOverlap'),
-  ratesVector:null,scalesVector:null,sampleRate:state.audioCtx?.sampleRate||44100
+  ratesVector:null,scalesVector:null,nhb:state.projection==='nhb',nhbSpan:state.span,sampleRate:state.audioCtx?.sampleRate||44100
  };
  if(mode==='log'){
   if(!Number.isFinite(cfg.cycles)||cfg.cycles<1||cfg.cycles>12)throw Error('Cycles : 1 à 12');
@@ -47,6 +47,7 @@ function configFromUI(){
   if(!Number.isFinite(cfg.overlap)||cfg.overlap<0||cfg.overlap>95)
     throw Error('Recouvrement MPS : 0 à 95 %');
  }
+ if(cfg.nhb)cfg.refreshHz=Math.min(8,n('refreshHz')); // NHB cochlear filtering is CPU-intensive.
  if(!Number.isFinite(cfg.refreshHz)||cfg.refreshHz<.2||cfg.refreshHz>30)
     throw Error('Cadence : 0,2 à 30 Hz');
  return cfg;
@@ -71,8 +72,8 @@ function updateMode(){
  $('modeNote').textContent=lin
  ? 'FFT 2D du spectrogramme : l’overlap MPS règle le pas de calcul. Le plafond de cadence est facultatif.'
  : 'Filtres Gabor locaux multirésolution : grille automatique ou vecteurs personnalisés.';
- const menu=$('projection');for(const option of menu.options)option.disabled=lin&&option.value!=='sr';
- if(lin){menu.value='sr';state.projection='sr';}
+ const menu=$('projection');for(const option of menu.options)option.disabled=lin&&option.value!=='sr'&&option.value!=='nhb';
+ if(lin && state.projection!=='nhb'){menu.value='sr';state.projection='sr';}
  updateGridControls();updateChart();
 }
 function updateLinearInfo(cfg){
@@ -100,8 +101,20 @@ function applyConfig(){clearTimeout(state.restartTimeout);
 function scheduleSettings(){clearTimeout(state.restartTimeout);state.restartTimeout=setTimeout(applyConfig,650);}
 values.forEach(el=>{
  const fn=el.tagName==='SELECT'?'change':'input';el.addEventListener(fn,()=>{
-  if(el.id==='projection'){state.projection=el.value;state.selected=null;updateChart();return;}
-  if(el.id==='timeSpan'){state.span=Number(el.value);updateChart();return;}
+  if(el.id==='projection'){
+    const wasNHB=state.projection==='nhb';
+    state.projection=el.value;state.selected=null;
+    if(wasNHB!==(state.projection==='nhb'))applyConfig();else updateChart();
+    return;
+  }
+  if(el.id==='timeSpan'){
+    state.span=Number(el.value);
+    if(state.projection==='nhb'){
+      if(state.config)state.config.nhbSpan=state.span;
+      if(state.running&&state.worker)state.worker.postMessage({kind:'nhbSpan',span:state.span});
+    }
+    updateChart();return;
+  }
   if(el.id==='gridMode')updateGridControls();
   if(el.tagName==='SELECT')applyConfig();else scheduleSettings();
  });
@@ -122,7 +135,9 @@ async function start(){if(state.running)return;
  worker.onmessage=e=>{if(!state.running||generation!==state.generation)return;
   if(e.data.kind==='error')warn(e.data.message);
   else if(e.data.kind==='result')onResult(e.data);
-  else if(e.data.kind==='configured')$('details').textContent=`Micro ${Math.round(audioCtx.sampleRate)} Hz · STFT ${e.data.fftSize} / hop ${e.data.hop}`;
+  else if(e.data.kind==='configured')$('details').textContent=e.data.nhb
+    ? `Micro ${Math.round(audioCtx.sampleRate)} Hz · NHB 16 kHz / 250 Hz / 128 canaux`
+    : `Micro ${Math.round(audioCtx.sampleRate)} Hz · STFT ${e.data.fftSize} / hop ${e.data.hop}`;
  };
  worker.onerror=e=>warn('Erreur du moteur de calcul : '+e.message);
  worker.postMessage({kind:'config',config:cfg});
@@ -157,7 +172,9 @@ function onResult(data){if(state.frozen)return;
   while(state.history.length>4000||state.history.length&&now/1000-state.history[0].t>75)state.history.shift();
  }
  const basics=`Micro ${Math.round(state.audioCtx?.sampleRate||0)} Hz · niveau ${data.rms.toFixed(1)} dBFS · cadence observée ${state.observedHz?.toFixed(1)||'—'} Hz`;
- $('details').textContent=data.mode==='lin'
+ $('details').textContent=data.mode==='nhb'
+  ? `${basics} · NHB 2021 · 128 canaux cochléaires · 250 trames/s · affichage ${state.config.refreshHz.toFixed(1)} Hz`
+  : data.mode==='lin'
   ? `${basics} · FFT2 ${(data.effectiveWindow||0).toFixed(2)} s · pas MPS ${(data.mpsStepSeconds||0).toFixed(2)} s`+
     (state.config.linRefreshLimited?` · plafond ${state.config.refreshHz.toFixed(1)} Hz`:'')
   : `${basics} · cible ${state.config.refreshHz.toFixed(1)} Hz · rate max ${state.config.maxRate} Hz`;
@@ -200,7 +217,7 @@ function drawLine(points,color,width=1.5){ctx.beginPath();let active=false;for(l
  if(!active)ctx.moveTo(p[0],p[1]);else ctx.lineTo(p[0],p[1]);active=true;
  }ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke();}
 function label(t,x,y,align='left',color='#b8cbd5',size=11){ctx.fillStyle=color;ctx.textAlign=align;ctx.font=`${size}px system-ui,sans-serif`;ctx.fillText(t,x,y);ctx.textAlign='left';}
-function formatAxis(v,code,axis){const kind=code[0]==='t'&&axis==='x'?'time':code==='sr'?(axis==='x'?'rate':'scale'):
+function formatAxis(v,code,axis){const kind=(code[0]==='t'||code==='nhb')&&axis==='x'?'time':code==='sr'?(axis==='x'?'rate':'scale'):
  code==='fr'?(axis==='x'?'rate':'frequency'):code==='fs'?(axis==='x'?'scale':'frequency'):
  code==='tr'?'rate':code==='ts'?'scale':'frequency';
  if(kind==='time')return `${v.toFixed(1)} s`;if(kind==='scale')return `${v.toFixed(2)} cyc/oct`;
@@ -208,12 +225,12 @@ function formatAxis(v,code,axis){const kind=code[0]==='t'&&axis==='x'?'time':cod
 }
 
 function tickValues(values,code,axis){
- if(code[0]==='t'&&axis==='x')return[-state.span,-state.span/2,0];
+ if((code[0]==='t'||code==='nhb')&&axis==='x')return[-state.span,-state.span/2,0];
  const axisName=axisLabels[code][axis==='x'?0:1],min=values[0],max=values.at(-1);
  let ticks;
  if(axisName.startsWith('Rate'))ticks=min<0?[-128,-64,-32,-16,-4,-1,1,4,16,32,64,128]:[0,.5,1,2,4,8,16,32,64,128];
  else if(axisName.startsWith('Scale'))ticks=max>4?[0,.71,1,2,4,5.66,8]:[0,.5,1,2,3,4];
- else ticks=[125,500,2000,8000];
+ else ticks=code==='nhb'?[250,500,1000,2000,4000,7000]:[125,500,2000,8000];
  ticks=ticks.filter(v=>v>=min-1e-7&&v<=max+1e-7);
  if(ticks.length>4)return Array.from({length:4},(_,i)=>ticks[Math.round(i*(ticks.length-1)/3)]);
  return ticks;
@@ -222,6 +239,8 @@ function closest(values,target){let best=0,err=Infinity;for(let i=0;i<values.len
 function formatShort(v){if(v===0)return '0';if(Math.abs(v)>=1000)return (v/1000).toFixed(0)+'k';if(Math.abs(v)<1)return v.toFixed(2);return Number.isInteger(v)?''+v:v.toFixed(1);}
 function projectionForCode(code){
  const d=state.data;if(!d)return null;
+ if(code==='nhb')return d.mode==='nhb'?d.nhb:null;
+ if(d.mode==='nhb')return null;
  const axes=d.axes;
  if(code==='sr')return {xs:axes.rates,ys:axes.scales,map:d.sr};
  if(code==='fr')return d.fr?{xs:axes.rates,ys:axes.acoustic,map:d.fr}:null;
@@ -230,7 +249,7 @@ function projectionForCode(code){
  return null;
 }
 function panelsForView(){
- const group=state.projection==='tr'?['tr','ts','tf']:['sr','fr','fs'];
+ const group=state.projection==='nhb'?['nhb']:state.projection==='tr'?['tr','ts','tf']:['sr','fr','fs'];
  return group.map(code=>({code,projection:projectionForCode(code)}));
 }
 function updateChart(){
@@ -238,16 +257,17 @@ function updateChart(){
  const dpr=Math.min(2,devicePixelRatio||1);
  if(plot.width!==Math.round(w*dpr)||plot.height!==Math.round(h*dpr)){plot.width=Math.round(w*dpr);plot.height=Math.round(h*dpr);}
  ctx.setTransform(dpr,0,0,dpr,0,0);ctx.fillStyle='#0d1620';ctx.fillRect(0,0,w,h);
- const panels=panelsForView(),vertical=w<820,wide=vertical?w:w/3,tall=vertical?h/3:h;
+ const panels=panelsForView(),count=panels.length,vertical=count>1&&w<820,
+  wide=vertical?w:w/count,tall=vertical?h/count:h;
  state.currentPanels=panels;state.plotRects=[];
  $('plotTitle').textContent=state.projection==='tr'
   ? 'TEMPS × RATE / TEMPS × SCALE / TEMPS × FRÉQUENCE'
   : 'SCALE × RATE / FRÉQUENCE × RATE / FRÉQUENCE × SCALE';
  $('plotSubtitle').textContent=state.data?(state.data.mode==='lin'?'FFT 2D':'Gabor multirésolution'):'Micro non actif';
  let readout='Touchez un des trois cadrans pour lire X, Y et les dB relatifs.';
- for(let p=0;p<3;p++){
+ for(let p=0;p<count;p++){
   const code=panels[p].code,projection=panels[p].projection,ox=vertical?0:p*wide,oy=vertical?p*tall:0;
-  const left=ox+(wide<290?34:42),right=ox+wide-38,top=oy+21,bottom=oy+tall-45;
+  const left=ox+(wide<290?34:42),right=ox+wide-(count===1?43:38),top=oy+21,bottom=oy+tall-(count===1?51:45);
   state.plotRects.push({left,right,top,bottom,code,projection});
   ctx.fillStyle=p%2?'#0f1c26':'#0e1923';ctx.fillRect(ox,oy,wide,tall);
   if(p>0){ctx.strokeStyle='#263746';ctx.beginPath();if(vertical){ctx.moveTo(0,oy);ctx.lineTo(w,oy);}else{ctx.moveTo(ox,0);ctx.lineTo(ox,h);}ctx.stroke();}
@@ -298,7 +318,7 @@ function selectPoint(e){
 plot.addEventListener('pointerdown',e=>{selectPoint(e);plot.setPointerCapture(e.pointerId);});
 plot.addEventListener('pointermove',e=>{if(e.buttons)selectPoint(e);});
 function download(name,blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
-$('exportPng').onclick=()=>plot.toBlob(b=>{if(b)download('ModulationScope_three_panels_'+Date.now()+'.png',b);},'image/png');
+$('exportPng').onclick=()=>plot.toBlob(b=>{if(b)download('ModulationScope_'+state.projection+'_'+Date.now()+'.png',b);},'image/png');
 $('exportCsv').onclick=()=>{
  const panels=panelsForView(),lines=['projection,x_value,y_value,x_unit,y_unit,power_linear,relative_db,mode'];
  for(const item of panels){
@@ -309,7 +329,7 @@ $('exportCsv').onclick=()=>{
    lines.push([code,p.xs[j],p.ys[i],units[0],units[1],Number.isFinite(v)?v:'NaN',Number.isFinite(dec)?dec:'NaN',state.data.mode].join(','));
   }
  }
- download('ModulationScope_three_panels_'+Date.now()+'.csv',new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'}));
+ download('ModulationScope_'+state.projection+'_'+Date.now()+'.csv',new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'}));
 };
 const panel=$('chartPanel'),splitter=$('splitter'),app=$('app');let dragging=false;
 function resizeChart(height){const available=app.getBoundingClientRect().height-95;const px=clamp(height,150,Math.max(170,available-120));panel.style.height=`${px}px`;try { localStorage.setItem('modulationscope-panel-height',String(px)); } catch (_) { /* storage disabled */ }updateChart();}
