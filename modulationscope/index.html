@@ -25,8 +25,8 @@
     <section class="section">
       <h2>Visualisation</h2>
       <div class="fields">
-        <label>Type d'affichage<select id="displayMode"><option value="map" selected>Cartes (2D)</option><option value="curves">Courbes (1D)</option></select></label>
-        <label id="curveAxisControl" class="hidden">Axe du profil<select id="curveAxis"><option value="x" selected>Profil X (moyenne sur Y)</option><option value="y">Profil Y (moyenne sur X)</option></select></label>
+        <label>Type d'affichage<select id="displayMode"><option value="map" selected>Cartes (2D)</option><option value="curves">Courbes · profil moyen</option><option value="curves-all">Courbes · toutes (sans moyenne)</option></select></label>
+        <label id="curveAxisControl" class="hidden">Axe des courbes<select id="curveAxis"><option value="x" selected>Suivant X</option><option value="y">Suivant Y</option></select></label>
       </div>
       <div id="curveScaleControl" class="fields hidden" style="margin-top:11px">
         <label>Échelle verticale (dB)<select id="curveScaleMode"><option value="auto" selected>Automatique</option><option value="manual">Manuelle</option></select></label>
@@ -98,7 +98,7 @@
     <section class="section status-section"><p class="hint">Microscope acoustique expérimental : les dB sont relatifs à chaque carte, pas des niveaux SPL calibrés. Audio local, rien n'est envoyé au serveur. Le navigateur nécessite HTTPS et l'autorisation du microphone.</p><p id="details" class="details">Aucune acquisition.</p><p id="error" class="error" aria-live="polite"></p></section>
   </main>
 </div>
-<script src="curves.js" defer></script>
-<script src="app.js" defer></script>
+<script src="curves.js?v=20261107b" defer></script>
+<script src="app.js?v=20261107b" defer></script>
 </body>
 </html>
