@@ -125,9 +125,9 @@ values.forEach(el=>{
  const fn=el.tagName==='SELECT'?'change':'input';el.addEventListener(fn,()=>{
   if(el.id==='displayMode'){
     state.viewMode=el.value;state.selected=null;
-    $('curveAxisControl').classList.toggle('hidden',state.viewMode!=='curves');
-    $('curveScaleControl').classList.toggle('hidden',state.viewMode!=='curves');
-    $('curveScaleNote').classList.toggle('hidden',state.viewMode!=='curves');
+    $('curveAxisControl').classList.toggle('hidden',state.viewMode==='map');
+    $('curveScaleControl').classList.toggle('hidden',state.viewMode==='map');
+    $('curveScaleNote').classList.toggle('hidden',state.viewMode==='map');
     updateChart();return;
   }
   if(el.id==='curveAxis'){
@@ -341,8 +341,6 @@ function drawCurvePanel(projection,code,left,right,top,bottom){
   const j=Math.round(k*(axis.length-1)/2);
   label(formatShort(axis[j]),left+(j+.5)*w/n,bottom+11,'center','#a8bac6',9);
  }
- label(alongX?'Profil X · moyenne sur Y':'Profil Y · moyenne sur X',
-   left+w/2,top-8,'center','#dce9ee',10);
  label(axisLabels[code][alongX?0:1],left+w/2,bottom+26,'center','#dce9ee',9);
  const selected=state.selected?.code===code?
    (alongX?state.selected.j:state.selected.i):-1;
@@ -360,6 +358,36 @@ function drawCurvePanel(projection,code,left,right,top,bottom){
  return '';
 }
 
+function allCurveInfo(p){
+ const x=state.curveAxis==='x',axis=x?p.xs:p.ys,other=x?p.ys:p.xs;
+ const powers=window.ModulationCurves.traces(p.map,state.curveAxis);
+ const db=powers.map(a=>window.ModulationCurves.toDb(a,state.colorRef||1e-12));
+ const [lo,hi]=window.ModulationCurves.selectRange(db.flat(),state.curveScaleManual?[state.curveMinDb,state.curveMaxDb]:null);
+ return {x,axis,other,powers,db,lo,hi};
+}
+function drawAllCurves(p,code,left,right,top,bottom){
+ const d=allCurveInfo(p),n=d.axis.length,w=right-left,h=bottom-top;
+ ctx.fillStyle='#142533';ctx.fillRect(left,top,w,h);ctx.strokeStyle='#344b5a';
+ for(let z=0;z<=4;z++){let y=top+z*h/4;ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();label((d.hi-z*(d.hi-d.lo)/4).toFixed(1),left-3,y+3,'right','#98adba',8);}
+ if(!n)return '';
+ const xx=j=>left+(j+.5)*w/n,yy=v=>bottom-(v-d.lo)/(d.hi-d.lo)*h;
+ const pts=a=>a.map((v,j)=>Number.isFinite(v)?[xx(j),yy(v)]:null);
+ const sel=state.selected?.code===code?state.selected:null;
+ const j=sel?(d.x?sel.j:sel.i):-1,k=sel?(d.x?sel.i:sel.j):-1;
+ const value=sel&&d.db[k]?.[j];
+ ctx.save();ctx.beginPath();ctx.rect(left,top,w,h);ctx.clip();
+ d.db.forEach((row,k)=>drawLine(pts(row),'hsla('+(220-220*k/Math.max(1,d.db.length-1))+',85%,67%,'+(d.db.length>32?.32:.68)+')',1.2));
+ if(Number.isFinite(value))drawLine(pts(d.db[k]),'#ffffff',2);
+ ctx.restore();
+ for(let z=0;z<3;z++){let j=Math.round(z*(n-1)/2);label(formatShort(d.axis[j]),xx(j),bottom+11,'center','#a8bac6',9);}
+ label(axisLabels[code][d.x?0:1],left+w/2,bottom+26,'center','#dce9ee',9);
+ if(d.other.length)label(d.db.length+' courbes · '+(d.x?'Y':'X')+' '+formatShort(d.other[0])+' à '+formatShort(d.other.at(-1)),left,bottom+44,'left','#a8bac6',8);
+ if(Number.isFinite(value)){
+  ctx.strokeStyle='#fff';ctx.beginPath();ctx.moveTo(xx(j),top);ctx.lineTo(xx(j),bottom);ctx.stroke();
+  return titles[code]+' · '+formatAxis(d.axis[j],code,d.x?'x':'y')+' · '+formatAxis(d.other[k],code,d.x?'y':'x')+' · '+value.toFixed(2)+' dB';
+ }
+ return '';
+}
 function updateChart(){
  const legend=$('colorRefInfo');
  if(legend)legend.textContent=state.colorRef===null
@@ -380,24 +408,26 @@ function updateChart(){
  $('plotSubtitle').textContent=state.data?(state.data.mode==='nhb'
   ? 'NHB 2021 · 128 canaux cochléaires · 250 Hz'
   : state.data.mode==='lin'?'FFT 2D':'Gabor multirésolution'):'Micro non actif';
- if(state.viewMode==='curves')$('plotSubtitle').textContent+=' · COURBES '+state.curveAxis.toUpperCase()+
+ if(state.viewMode!=='map')$('plotSubtitle').textContent+=' · COURBES '+state.curveAxis.toUpperCase()+
   (state.curveScaleManual?' · '+state.curveMinDb+' à '+state.curveMaxDb+' dB':' · dB auto');
  let readout=count===1?'Touchez le spectrogramme pour lire temps, fréquence et dB relatifs.'
   :'Touchez un des trois cadrans pour lire X, Y et les dB relatifs.';
  for(let p=0;p<count;p++){
   const code=panels[p].code,projection=panels[p].projection,ox=vertical?0:p*wide,oy=vertical?p*tall:0;
-  const left=ox+(wide<290?34:42),right=ox+wide-(count===1?43:38),top=oy+21,bottom=oy+tall-(count===1?51:45);
+  const allCurves=state.viewMode==='curves-all',curveMode=state.viewMode!=='map';
+  const left=ox+(wide<290?34:42),right=ox+wide-(count===1?43:38),top=oy+(curveMode?43:21),bottom=oy+tall-(allCurves?61:count===1?51:45);
   state.plotRects.push({left,right,top,bottom,code,projection});
   ctx.fillStyle=p%2?'#0f1c26':'#0e1923';ctx.fillRect(ox,oy,wide,tall);
   if(p>0){ctx.strokeStyle='#263746';ctx.beginPath();if(vertical){ctx.moveTo(0,oy);ctx.lineTo(w,oy);}else{ctx.moveTo(ox,0);ctx.lineTo(ox,h);}ctx.stroke();}
-  label(titles[code],ox+wide/2,oy+12,'center','#e5eef4',10);
+  label(titles[code],ox+wide/2,oy+14,'center','#e5eef4',10);
+  if(curveMode)label(allCurves?'Toutes les courbes · sans moyenne':'Profil moyen',ox+wide/2,oy+31,'center','#a8bac6',9);
   if(right-left<35||bottom-top<18)continue;
   ctx.fillStyle='#142533';ctx.fillRect(left,top,right-left,bottom-top);
   if(!projection||!projection.map){
    label(state.data?.mode==='lin'?'Indisponible en FFT 2D':'En attente du micro',left+3,top+20,'left','#8ca5b5',10);continue;
   }
-  if(state.viewMode==='curves'){
-   const r=drawCurvePanel(projection,code,left,right,top,bottom);
+  if(curveMode){
+   const r=allCurves?drawAllCurves(projection,code,left,right,top,bottom):drawCurvePanel(projection,code,left,right,top,bottom);
    if(r)readout=r;
    continue;
   }
@@ -433,11 +463,17 @@ function selectPoint(e){
   const {left,right,top,bottom,code,projection}=rect;
   if(!projection||x<left||x>=right||y<top||y>=bottom)continue;
   const rows=projection.map.length,cols=projection.map[0]?.length||0;
-  if(state.viewMode==='curves'){
+  if(state.viewMode!=='map'){
    const alongX=state.curveAxis==='x';
    const n=alongX?cols:rows;
    const index=clamp(Math.floor((x-left)/(right-left)*n),0,n-1);
-   state.selected={code,i:alongX?0:index,j:alongX?index:0};
+   if(state.viewMode==='curves-all'){
+    const d=allCurveInfo(projection);let kBest=-1,best=Infinity;
+    d.db.forEach((row,k)=>{let v=row[index];if(!Number.isFinite(v))return;const yc=bottom-(v-d.lo)/(d.hi-d.lo)*(bottom-top);
+     if(Math.abs(y-yc)<best){best=Math.abs(y-yc);kBest=k;}});
+    if(kBest<0)return;
+    state.selected={code,i:alongX?kBest:index,j:alongX?index:kBest};
+   }else state.selected={code,i:alongX?0:index,j:alongX?index:0};
    updateChart();return;
   }
   if(!rows||!cols)continue;
@@ -452,6 +488,13 @@ function download(name,blob){const url=URL.createObjectURL(blob),a=document.crea
 $('exportPng').onclick=()=>plot.toBlob(b=>{if(b)download('ModulationScope_'+state.projection+'_'+Date.now()+'.png',b);},'image/png');
 $('exportCsv').onclick=()=>{
  const panels=panelsForView(),lines=['projection,x_value,y_value,x_unit,y_unit,power_linear,relative_db,mode,fixed_reference_power'];
+ if(state.viewMode==='curves-all'){
+  const rows=['projection,axis,curve_coordinate,x_coordinate,power,db'];
+  for(const item of panels){if(!item.projection)continue;const d=allCurveInfo(item.projection);
+   for(let k=0;k<d.powers.length;k++)for(let j=0;j<d.axis.length;j++)rows.push([item.code,state.curveAxis,d.other[k],d.axis[j],d.powers[k][j],d.db[k][j]].join(','));
+  }
+  download('ModulationScope_toutes_courbes_'+state.projection+'_'+Date.now()+'.csv',new Blob([rows.join('\n')],{type:'text/csv;charset=utf-8'}));return;
+ }
  if(state.viewMode==='curves'){
   const rows=['projection,curve_axis,coordinate,unit,power_linear,db_relative,reference_power,mode,db_scale_mode,db_axis_min,db_axis_max'];
   for(const item of panels){
