@@ -6,6 +6,7 @@ on:
     paths:
       - 'modulationscope/**'
       - 'tests/modulation-scope-web.cjs'
+      - 'tests/test-curves.cjs'
       - 'tests/test-nhb.cjs'
       - '.github/workflows/test-modulationscope.yml'
   workflow_dispatch:
@@ -24,6 +25,7 @@ jobs:
       - name: Check browser JavaScript syntax
         run: |
           node --check modulationscope/app.js
+          node --check modulationscope/curves.js
           node --check modulationscope/dsp-worker.js
           node --check modulationscope/nhb-core.js
           node --check modulationscope/nhb-filterbank.js
@@ -32,3 +34,6 @@ jobs:
         run: node tests/modulation-scope-web.cjs
       - name: Validate original COCHBA and streaming NHB spectrogram
         run: node tests/test-nhb.cjs
+
+      - name: Test map-to-curve marginal profiles
+        run: node tests/test-curves.cjs
