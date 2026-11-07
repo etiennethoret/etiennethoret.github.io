@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id);
 let plot=$('chart'),ctx=plot.getContext('2d',{alpha:false});
 const state={running:false,frozen:false,worker:null,stream:null,audioCtx:null,source:null,recorder:null,
   config:null,data:null,history:[],current:null,projection:'sr',span:30,selected:null,
-  timeLast:null,observedHz:null,generation:0,plotRect:null,dims:null,restartTimeout:null,viewMode:'map',curveAxis:'x',
+  timeLast:null,observedHz:null,generation:0,plotRect:null,dims:null,restartTimeout:null,viewMode:'map',curveAxis:'x',curveScaleManual:false,curveMinDb:-60,curveMaxDb:0,
   colorRef:null};
 const axisLabels={sr:['Rate (Hz)','Scale (cyc/oct)'],fr:['Rate (Hz)','Fréquence (Hz)'],fs:['Scale (cyc/oct)','Fréquence (Hz)'],
   tr:['Temps relatif (s)','Rate (Hz)'],ts:['Temps relatif (s)','Scale (cyc/oct)'],tf:['Temps relatif (s)','Fréquence (Hz)'],nhb:['Temps relatif (s)','Fréquence cochléaire (Hz)']};
@@ -100,15 +100,47 @@ function applyConfig(){clearTimeout(state.restartTimeout);
  }catch(e){warn(e.message);}
 }
 function scheduleSettings(){clearTimeout(state.restartTimeout);state.restartTimeout=setTimeout(applyConfig,650);}
+// dB range is display-only; editing it must never restart the microphone or DSP.
+function updateCurveRange(){
+ const note=$('curveScaleNote');
+ if(!state.curveScaleManual){
+  note.textContent='Échelle automatique indépendante pour chaque courbe.';
+  note.style.color='';
+  return true;
+ }
+ const a=$('curveDbMin').value.trim(),b=$('curveDbMax').value.trim();
+ const lo=Number(a),hi=Number(b);
+ if(!a||!b||!Number.isFinite(lo)||!Number.isFinite(hi)||lo>=hi){
+  note.textContent='Plage invalide : dB min doit être inférieur à dB max. Dernières limites valides conservées.';
+  note.style.color='#f5a48e';
+  return false;
+ }
+ state.curveMinDb=lo;state.curveMaxDb=hi;
+ note.textContent='Échelle fixe commune : '+lo.toLocaleString('fr-FR')+' à '+hi.toLocaleString('fr-FR')+
+  ' dB (référence de puissance verrouillée).';
+ note.style.color='';
+ return true;
+}
 values.forEach(el=>{
  const fn=el.tagName==='SELECT'?'change':'input';el.addEventListener(fn,()=>{
   if(el.id==='displayMode'){
     state.viewMode=el.value;state.selected=null;
     $('curveAxisControl').classList.toggle('hidden',state.viewMode!=='curves');
+    $('curveScaleControl').classList.toggle('hidden',state.viewMode!=='curves');
+    $('curveScaleNote').classList.toggle('hidden',state.viewMode!=='curves');
     updateChart();return;
   }
   if(el.id==='curveAxis'){
     state.curveAxis=el.value;state.selected=null;updateChart();return;
+  }
+  if(el.id==='curveScaleMode'){
+    state.curveScaleManual=el.value==='manual';
+    $('curveMinField').classList.toggle('hidden',!state.curveScaleManual);
+    $('curveMaxField').classList.toggle('hidden',!state.curveScaleManual);
+    updateCurveRange();updateChart();return;
+  }
+  if(el.id==='curveDbMin'||el.id==='curveDbMax'){
+    updateCurveRange();updateChart();return;
   }
   if(el.id==='projection'){
     const wasNHB=state.projection==='nhb';
@@ -288,7 +320,8 @@ function drawCurvePanel(projection,code,left,right,top,bottom){
  const power=window.ModulationCurves.marginal(projection.map,state.curveAxis);
  const axis=alongX?projection.xs:projection.ys;
  const dB=window.ModulationCurves.toDb(power,state.colorRef||1e-12);
- const [lo,hi]=window.ModulationCurves.autoRange(dB);
+ const [lo,hi]=window.ModulationCurves.selectRange(dB,
+  state.curveScaleManual?[state.curveMinDb,state.curveMaxDb]:null);
  const n=dB.length,w=right-left,h=bottom-top;
  ctx.fillStyle='#142533';ctx.fillRect(left,top,w,h);
  ctx.strokeStyle='#344b5a';ctx.lineWidth=.8;
@@ -299,8 +332,11 @@ function drawCurvePanel(projection,code,left,right,top,bottom){
  }
  const pts=[];
  for(let i=0;i<n;i++)pts.push(Number.isFinite(dB[i])
-   ?[left+(i+.5)*w/n,bottom-Math.max(0,Math.min(1,(dB[i]-lo)/(hi-lo)))*h]:null);
+   ?[left+(i+.5)*w/n,bottom-(dB[i]-lo)/(hi-lo)*h]:null);
+ // Clip values outside the chosen range instead of flattening them to its edges.
+ ctx.save();ctx.beginPath();ctx.rect(left,top,w,h);ctx.clip();
  drawLine(pts,'#65ddc6',2);
+ ctx.restore();
  for(let k=0;k<3;k++){
   const j=Math.round(k*(axis.length-1)/2);
   label(formatShort(axis[j]),left+(j+.5)*w/n,bottom+11,'center','#a8bac6',9);
@@ -312,10 +348,12 @@ function drawCurvePanel(projection,code,left,right,top,bottom){
    (alongX?state.selected.j:state.selected.i):-1;
  if(selected>=0 && selected<n && Number.isFinite(dB[selected])){
   const x=left+(selected+.5)*w/n;
-  const y=bottom-Math.max(0,Math.min(1,(dB[selected]-lo)/(hi-lo)))*h;
+  const y=bottom-(dB[selected]-lo)/(hi-lo)*h;
   ctx.strokeStyle='#fff';ctx.lineWidth=1;
   ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,bottom);ctx.stroke();
-  ctx.beginPath();ctx.arc(x,y,3.3,0,Math.PI*2);ctx.stroke();
+  if(y>=top&&y<=bottom){
+   ctx.beginPath();ctx.arc(x,y,3.3,0,Math.PI*2);ctx.stroke();
+  }
   return titles[code]+' · '+formatAxis(axis[selected],code,alongX?'x':'y')+
    ' · '+dB[selected].toFixed(2)+' dB (référence fixe)';
  }
@@ -342,7 +380,8 @@ function updateChart(){
  $('plotSubtitle').textContent=state.data?(state.data.mode==='nhb'
   ? 'NHB 2021 · 128 canaux cochléaires · 250 Hz'
   : state.data.mode==='lin'?'FFT 2D':'Gabor multirésolution'):'Micro non actif';
- if(state.viewMode==='curves')$('plotSubtitle').textContent+=' · COURBES '+state.curveAxis.toUpperCase();
+ if(state.viewMode==='curves')$('plotSubtitle').textContent+=' · COURBES '+state.curveAxis.toUpperCase()+
+  (state.curveScaleManual?' · '+state.curveMinDb+' à '+state.curveMaxDb+' dB':' · dB auto');
  let readout=count===1?'Touchez le spectrogramme pour lire temps, fréquence et dB relatifs.'
   :'Touchez un des trois cadrans pour lire X, Y et les dB relatifs.';
  for(let p=0;p<count;p++){
@@ -414,16 +453,18 @@ $('exportPng').onclick=()=>plot.toBlob(b=>{if(b)download('ModulationScope_'+stat
 $('exportCsv').onclick=()=>{
  const panels=panelsForView(),lines=['projection,x_value,y_value,x_unit,y_unit,power_linear,relative_db,mode,fixed_reference_power'];
  if(state.viewMode==='curves'){
-  const rows=['projection,curve_axis,coordinate,unit,power_linear,db_relative,reference_power,mode'];
+  const rows=['projection,curve_axis,coordinate,unit,power_linear,db_relative,reference_power,mode,db_scale_mode,db_axis_min,db_axis_max'];
   for(const item of panels){
    const p=item.projection;if(!p)continue;
    const alongX=state.curveAxis==='x',axis=alongX?p.xs:p.ys;
    const power=window.ModulationCurves.marginal(p.map,state.curveAxis);
    const db=window.ModulationCurves.toDb(power,state.colorRef||1e-12);
+   const [lowDb,highDb]=window.ModulationCurves.selectRange(db,
+    state.curveScaleManual?[state.curveMinDb,state.curveMaxDb]:null);
    const unit=axisLabels[item.code][alongX?0:1].match(/\(([^)]+)\)/)?.[1]||'';
    for(let j=0;j<axis.length;j++)rows.push([item.code,state.curveAxis,axis[j],unit,
     Number.isFinite(power[j])?power[j]:'NaN',Number.isFinite(db[j])?db[j]:'NaN',
-    state.colorRef??'NaN',state.data.mode].join(','));
+    state.colorRef??'NaN',state.data.mode,state.curveScaleManual?'manual':'auto',lowDb,highDb].join(','));
   }
   download('ModulationScope_profils_'+state.projection+'_'+Date.now()+'.csv',
    new Blob([rows.join('\n')],{type:'text/csv;charset=utf-8'}));

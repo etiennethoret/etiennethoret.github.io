@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');
-const {marginal,toDb,autoRange}=require('../modulationscope/curves.js');
+const {marginal,toDb,autoRange,selectRange}=require('../modulationscope/curves.js');
 const matrix=[[1,2,NaN],[3,4,6]];
 assert.deepEqual(marginal(matrix,'x'),[2,3,6]);
 assert.deepEqual(marginal(matrix,'y'),[1.5,13/3]);
@@ -8,4 +8,10 @@ assert.equal(toDb([1,2],2)[1],0);
 assert(Math.abs(autoRange([0,0,0])[0]+1.74)<1e-10);
 assert(Math.abs(autoRange([0,0,0])[1]-1.74)<1e-10);
 assert(Number.isNaN(toDb([NaN],1)[0]));
-console.log('PASS fixed-reference curve profiles');
+assert.deepEqual(selectRange([0,0,0],null),autoRange([0,0,0]));
+assert.deepEqual(selectRange([-80,-20,2],[-90,10]),[-90,10]);
+assert.deepEqual(selectRange([-80,-20,2],[-5,0]),[-5,0]);
+assert.throws(()=>selectRange([1,2],[0,0]),RangeError);
+assert.throws(()=>selectRange([1,2],[3,2]),RangeError);
+assert.throws(()=>selectRange([1,2],[NaN,0]),RangeError);
+console.log('PASS fixed-reference curve profiles, automatic/manual dB limits');

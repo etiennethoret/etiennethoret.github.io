@@ -28,6 +28,12 @@
         <label>Type d'affichage<select id="displayMode"><option value="map" selected>Cartes (2D)</option><option value="curves">Courbes (1D)</option></select></label>
         <label id="curveAxisControl" class="hidden">Axe du profil<select id="curveAxis"><option value="x" selected>Profil X (moyenne sur Y)</option><option value="y">Profil Y (moyenne sur X)</option></select></label>
       </div>
+      <div id="curveScaleControl" class="fields hidden" style="margin-top:11px">
+        <label>Échelle verticale (dB)<select id="curveScaleMode"><option value="auto" selected>Automatique</option><option value="manual">Manuelle</option></select></label>
+        <label id="curveMinField" class="hidden">dB min<input id="curveDbMin" type="number" inputmode="decimal" step="0.5" value="-60" /></label>
+        <label id="curveMaxField" class="hidden">dB max<input id="curveDbMax" type="number" inputmode="decimal" step="0.5" value="0" /></label>
+      </div>
+      <p id="curveScaleNote" class="hint hidden" aria-live="polite">Échelle automatique indépendante pour chaque courbe.</p>
       <div class="fields"><label>Groupe de trois cartes<select id="projection"><option value="sr">Scale × rate / fréquence × rate / fréquence × scale</option><option value="tr">Temps × rate / temps × scale / temps × fréquence · énergie STRF</option><option value="nhb">Temps × fréquence · spectrogramme auditif NHB (2021)</option></select></label><label id="timeSpanLabel">Historique temporel<select id="timeSpan"><option value="10">10 s</option><option value="30" selected>30 s</option><option value="60">60 s</option></select></label></div>
     </section>
     <section class="section">

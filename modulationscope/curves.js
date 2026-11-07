@@ -28,6 +28,13 @@ function autoRange(values){
  const span=Math.max(3,hi-lo),mid=.5*(hi+lo);
  return[mid-.58*span,mid+.58*span];
 }
-root.ModulationCurves={marginal,toDb,autoRange};
+function selectRange(values,limits=null){
+ if(limits===null)return autoRange(values);
+ if(!Array.isArray(limits)||limits.length!==2||!limits.every(Number.isFinite)
+    ||limits[0]>=limits[1])
+  throw new RangeError('dB min doit être inférieur à dB max');
+ return limits.slice();
+}
+root.ModulationCurves={marginal,toDb,autoRange,selectRange};
 if(typeof module!=='undefined'&&module.exports)module.exports=root.ModulationCurves;
 })(typeof window!=='undefined'?window:globalThis);
