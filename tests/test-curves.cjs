@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');
+const {marginal,toDb,autoRange}=require('../modulationscope/curves.js');
+const matrix=[[1,2,NaN],[3,4,6]];
+assert.deepEqual(marginal(matrix,'x'),[2,3,6]);
+assert.deepEqual(marginal(matrix,'y'),[1.5,13/3]);
+assert.equal(toDb([1,2],2)[0],10*Math.log10(.5));
+assert.equal(toDb([1,2],2)[1],0);
+assert(Math.abs(autoRange([0,0,0])[0]+1.74)<1e-10);
+assert(Math.abs(autoRange([0,0,0])[1]-1.74)<1e-10);
+assert(Number.isNaN(toDb([NaN],1)[0]));
+console.log('PASS fixed-reference curve profiles');
