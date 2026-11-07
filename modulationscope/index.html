@@ -23,7 +23,7 @@
   <main class="controls" id="controls">
     <section class="section">
       <h2>Visualisation</h2>
-      <div class="fields"><label>Groupe de trois cartes<select id="projection"><option value="sr">Scale × rate / fréquence × rate / fréquence × scale</option><option value="tr">Temps × rate / temps × scale / temps × fréquence</option></select></label><label id="timeSpanLabel">Historique temporel<select id="timeSpan"><option value="10">10 s</option><option value="30" selected>30 s</option><option value="60">60 s</option></select></label></div>
+      <div class="fields"><label>Groupe de trois cartes<select id="projection"><option value="sr">Scale × rate / fréquence × rate / fréquence × scale</option><option value="tr">Temps × rate / temps × scale / temps × fréquence · énergie STRF</option><option value="nhb">Temps × fréquence · spectrogramme auditif NHB (2021)</option></select></label><label id="timeSpanLabel">Historique temporel<select id="timeSpan"><option value="10">10 s</option><option value="30" selected>30 s</option><option value="60">60 s</option></select></label></div>
     </section>
     <section class="section">
       <h2>Moteur d'analyse</h2>
@@ -79,6 +79,10 @@
         </div>
       </details>
       <p class="hint">FFT 2D classique d’un spectrogramme sur un axe acoustique logarithmique, fenêtres Hann temporelle et spectrale. Projection scale × rate uniquement.</p>
+    </section>
+    <section class="section">
+      <h2>Spectrogramme auditif NHB (2021)</h2>
+      <p class="hint">Cette vue reprend les coefficients cochléaires COCHBA de Thoret et al. (Nature Human Behaviour, 2021) : 128 canaux, traitement audio à 16 kHz, intégration de 8 ms, sortie à 250 trames/s. En temps réel, la normalisation de chaque son et le rééchantillonnage FFT hors ligne sont remplacés par une amplitude micro fixe et un rééchantillonnage causal anti-repliement. Les fréquences de l'axe sont estimées à partir des réponses des filtres ; l'échelle en dB est relative.</p>
     </section>
     <section class="section status-section"><p class="hint">Microscope acoustique expérimental : les dB sont relatifs à chaque carte, pas des niveaux SPL calibrés. Audio local, rien n'est envoyé au serveur. Le navigateur nécessite HTTPS et l'autorisation du microphone.</p><p id="details" class="details">Aucune acquisition.</p><p id="error" class="error" aria-live="polite"></p></section>
   </main>
