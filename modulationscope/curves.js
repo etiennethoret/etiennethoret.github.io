@@ -16,6 +16,13 @@ function marginal(map,axis){
  });
  throw Error('axis must be x or y');
 }
+/* Unaveraged lines: each row (for X) or each column (for Y). */
+function traces(map,axis){
+ if(!map||!map.length||!map[0]?.length)return [];
+ if(axis==='x')return map.map(row=>Array.from(row));
+ if(axis==='y')return Array.from({length:map[0].length},(_,j)=>map.map(row=>row[j]));
+ throw Error('axis must be x or y');
+}
 function toDb(power,reference){
  const ref=Number.isFinite(reference)&&reference>0?reference:1e-12;
  return power.map(v=>Number.isFinite(v)?10*Math.log10(Math.max(1e-21,v)/ref):NaN);
@@ -35,6 +42,6 @@ function selectRange(values,limits=null){
   throw new RangeError('dB min doit être inférieur à dB max');
  return limits.slice();
 }
-root.ModulationCurves={marginal,toDb,autoRange,selectRange};
+root.ModulationCurves={marginal,traces,toDb,autoRange,selectRange};
 if(typeof module!=='undefined'&&module.exports)module.exports=root.ModulationCurves;
 })(typeof window!=='undefined'?window:globalThis);
