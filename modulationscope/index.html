@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d1620" />
+  <meta name="description" content="Modulation Scope — analyse MPS/STRF locale depuis le microphone" />
+  <title>Modulation Scope — Web</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">◈</span><div><strong>MODULATION SCOPE</strong><small>Web · traitement local</small></div></div>
+    <div class="top-actions"><span class="state" id="state">● Micro arrêté</span><button id="toggleMicro" class="primary">Démarrer</button></div>
+  </header>
+  <section class="chart-panel" id="chartPanel" aria-label="Carte et marginales">
+    <div class="chart-head"><div><strong id="plotTitle">SCALE × RATE</strong><span id="plotSubtitle">Micro non actif</span></div><div class="head-buttons"><button id="freeze" disabled>Figer</button><button id="exportPng" disabled>PNG</button><button id="exportCsv" disabled>CSV</button></div></div>
+    <div class="canvas-wrap"><canvas id="chart" role="img" aria-label="Carte d'énergie des modulations et marginales, toucher pour lire les coordonnées"></canvas></div>
+    <div class="readout" id="readout">Touchez le graphique pour afficher les coordonnées X, Y et la valeur relative en dB.</div>
+  </section>
+  <div class="splitter" id="splitter" role="separator" aria-label="Redimensionner les deux parties" aria-orientation="horizontal" tabindex="0"><span class="grip"></span><span class="split-label">Glisser pour redimensionner</span><span class="grip"></span></div>
+  <main class="controls" id="controls">
+    <section class="section">
+      <h2>Visualisation</h2>
+      <div class="fields"><label>Projection<select id="projection"><option value="sr">Scale × rate</option><option value="fr">Fréquence × rate</option><option value="fs">Fréquence × scale</option><option value="tr">Temps × rate</option><option value="ts">Temps × scale</option><option value="tf">Temps × fréquence</option></select></label><label>Historique temporel<select id="timeSpan"><option value="10">10 s</option><option value="30" selected>30 s</option><option value="60">60 s</option></select></label></div>
+    </section>
+    <section class="section">
+      <h2>Moteur d'analyse</h2>
+      <div class="mode-switch" role="radiogroup" aria-label="Moteur d'analyse"><label><input type="radio" name="mode" value="log" checked /> Log · filtres Gabor</label><label><input type="radio" name="mode" value="lin" /> Lin · FFT 2D</label></div>
+      <p id="modeNote" class="hint">Énergie de filtres spectrotemporels, fenêtres temporelles adaptées au rate.</p>
+      <div class="fields"><label>Rafraîchissement demandé (Hz)<input id="refreshHz" type="number" inputmode="decimal" min="0.2" max="30" step="0.1" value="2" /></label><label>Bandes acoustiques<select id="bands"><option>32</option><option selected>64</option><option>96</option><option>128</option></select></label></div>
+    </section>
+    <section class="section" id="logSettings">
+      <h2>Log · multirésolution</h2>
+      <div class="fields"><label>Nombre de cycles par rate<input id="cycles" type="number" min="1" max="12" step="0.1" value="3" /></label><label>Durée d'intégration maximale (s)<input id="integration" type="number" min="0.1" max="20" step="0.1" value="6" /></label><label>Rate maximale (Hz)<select id="maxRate"><option>16</option><option selected>32</option><option>64</option><option>128</option></select></label><label>Direction<select id="direction"><option value="both">Les deux</option><option value="up">Montantes</option><option value="down">Descendantes</option></select></label><label>Nombre de rates<select id="ratesCount"><option selected>7</option><option>13</option><option>19</option><option>31</option></select></label><label>Nombre de scales<select id="scalesCount"><option selected>6</option><option>9</option><option>17</option><option>25</option></select></label></div>
+      <label class="full">Vecteur de rates en Hz (optionnel, séparateur « ; »)<textarea id="ratesVector" rows="2" spellcheck="false" placeholder="Ex. 0.5;1;2;4;8;16;32"></textarea></label>
+      <label class="full">Vecteur de scales en cycles/octave (optionnel)<textarea id="scalesVector" rows="2" spellcheck="false" placeholder="Ex. 0;0.5;1;2;3;4"></textarea></label>
+      <p class="hint">Les vecteurs personnalisés remplacent les grilles automatiques. Rates : 0,5–128 Hz ; scales : 0–4 cyc/oct. Valeurs croissantes, sans doublons. À 64/128 Hz, la STFT est raccourcie, réduisant la précision fréquentielle acoustique.</p>
+    </section>
+    <section class="section hidden" id="linSettings">
+      <h2>Lin · MPS Fourier 2D</h2>
+      <div class="fields"><label>Fenêtre MPS (secondes)<input id="fftWindow" type="number" min="0.1" max="20" step="0.1" value="2" /></label><label>Recouvrement MPS (%)<input id="overlap" type="number" min="0" max="95" step="1" value="50" /></label><label>STFT acoustique (points)<select id="fftSize"><option>256</option><option>512</option><option selected>1024</option><option>2048</option></select></label><label>Overlap STFT (%)<select id="stftOverlap"><option>50</option><option selected>75</option><option>87.5</option></select></label></div>
+      <p class="hint">FFT 2D de la matrice spectrogramme (temps × log-fréquence), pondérée Hann sur les deux axes. Les bins de rate et de scale sont des bins Fourier et dépendent des fenêtres. Projection scale × rate uniquement.</p>
+    </section>
+    <section class="section status-section"><p class="hint">Microscope acoustique expérimental : les dB sont relatifs à chaque carte, pas des niveaux SPL calibrés. Audio local, rien n'est envoyé au serveur. Le navigateur nécessite HTTPS et l'autorisation du microphone.</p><p id="details" class="details">Aucune acquisition.</p><p id="error" class="error" aria-live="polite"></p></section>
+  </main>
+</div>
+<script src="app.js" defer></script>
+</body>
+</html>
