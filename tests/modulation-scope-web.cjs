@@ -14,7 +14,7 @@ assert.match(html, /<option value="custom" selected>/);
 assert.match(html, /<option selected>128<\/option>/);
 assert.match(app, /function panelsForView\(\)/);
 assert.match(html, /<option value="curves-all">Courbes · toutes \(sans moyenne\)<\/option>/);
-assert.match(app, /function curveViewData\(projection\)/);
+assert.match(app, /function allCurveInfo\(projection\)/);
 assert.match(app, /state\.viewMode==='curves-all'/);
 assert.match(app, /Touchez une courbe pour identifier sa tranche/);
 assert.match(app, /ModulationScope_toutes_courbes_/);
