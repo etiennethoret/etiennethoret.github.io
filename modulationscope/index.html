@@ -29,19 +29,56 @@
       <h2>Moteur d'analyse</h2>
       <div class="mode-switch" role="radiogroup" aria-label="Moteur d'analyse"><label><input type="radio" name="mode" value="log" checked /> Log · filtres Gabor</label><label><input type="radio" name="mode" value="lin" /> Lin · FFT 2D</label></div>
       <p id="modeNote" class="hint">Énergie de filtres spectrotemporels, fenêtres temporelles adaptées au rate.</p>
-      <div class="fields"><label>Rafraîchissement demandé (Hz)<input id="refreshHz" type="number" inputmode="decimal" min="0.2" max="30" step="0.1" value="2" /></label><label>Bandes acoustiques<select id="bands"><option>32</option><option selected>64</option><option>96</option><option>128</option></select></label></div>
+      <div class="fields"><label>Bandes acoustiques<select id="bands"><option>32</option><option selected>64</option><option>96</option><option>128</option></select></label><label id="logCadenceControl">Cadence cible (Hz) · Log<input id="refreshHz" type="number" inputmode="decimal" min="0.2" max="30" step="0.1" value="2" /></label></div>
     </section>
+
     <section class="section" id="logSettings">
-      <h2>Log · multirésolution</h2>
-      <div class="fields"><label>Nombre de cycles par rate<input id="cycles" type="number" min="1" max="12" step="0.1" value="3" /></label><label>Durée d'intégration maximale (s)<input id="integration" type="number" min="0.1" max="20" step="0.1" value="6" /></label><label>Rate maximale (Hz)<select id="maxRate"><option>16</option><option selected>32</option><option>64</option><option>128</option></select></label><label>Direction<select id="direction"><option value="both">Les deux</option><option value="up">Montantes</option><option value="down">Descendantes</option></select></label><label>Nombre de rates<select id="ratesCount"><option selected>7</option><option>13</option><option>19</option><option>31</option></select></label><label>Nombre de scales<select id="scalesCount"><option selected>6</option><option>9</option><option>17</option><option>25</option></select></label></div>
-      <label class="full">Vecteur de rates en Hz (optionnel, séparateur « ; »)<textarea id="ratesVector" rows="2" spellcheck="false" placeholder="Ex. 0.5;1;2;4;8;16;32"></textarea></label>
-      <label class="full">Vecteur de scales en cycles/octave (optionnel)<textarea id="scalesVector" rows="2" spellcheck="false" placeholder="Ex. 0;0.5;1;2;3;4"></textarea></label>
-      <p class="hint">Les vecteurs personnalisés remplacent les grilles automatiques. Rates : 0,5–128 Hz ; scales : 0–4 cyc/oct. Valeurs croissantes, sans doublons. À 64/128 Hz, la STFT est raccourcie, réduisant la précision fréquentielle acoustique.</p>
+      <h2>Log · filtres Gabor multirésolution</h2>
+      <div class="fields">
+        <label>Nombre de cycles par rate<input id="cycles" type="number" min="1" max="12" step="0.1" value="3" /></label>
+        <label>Direction des modulations<select id="direction"><option value="both">Les deux</option><option value="up">Montantes</option><option value="down">Descendantes</option></select></label>
+      </div>
+      <p class="hint">Les cycles règlent la sélectivité : T(rate) = cycles / rate. Plus de cycles augmente la sélectivité, mais allonge la fenêtre.</p>
+      <label class="full">Définition des grilles<select id="gridMode"><option value="auto" selected>Grilles automatiques</option><option value="custom">Vecteurs personnalisés</option></select></label>
+      <div id="automaticGrids" class="fields spaced-fields">
+        <label>Rate maximale (Hz)<select id="maxRate"><option>16</option><option selected>32</option><option>64</option><option>128</option></select></label>
+        <label>Nombre de rates<select id="ratesCount"><option selected>7</option><option>13</option><option>19</option><option>31</option></select></label>
+        <label>Nombre de scales<select id="scalesCount"><option selected>6</option><option>9</option><option>17</option><option>25</option></select></label>
+      </div>
+      <div id="customGrids" class="hidden">
+        <label class="full">Vecteur de rates (Hz ; séparateur « ; »)<textarea id="ratesVector" rows="2" spellcheck="false">0.5;1;2;4;8;16;32</textarea></label>
+        <label class="full">Vecteur de scales (cycles/octave)<textarea id="scalesVector" rows="2" spellcheck="false">0;0.5;1;2;3;4</textarea></label>
+        <p class="hint">2 à 64 valeurs croissantes par vecteur. Rates : 0,5–128 Hz ; scales : 0–4 cyc/oct. La fréquence maximale des rates est déduite du vecteur et configure aussi la STFT.</p>
+      </div>
+      <p id="gridSummary" class="hint"></p>
+      <details class="advanced-panel" id="logAdvanced">
+        <summary>Avancé · durée d’intégration maximale (facultatif)</summary>
+        <div class="advanced-body">
+          <label class="toggle-row"><input type="checkbox" id="capEnabled" /> Activer un plafond d’intégration</label>
+          <label class="full hidden" id="capField">Durée maximale (s)<input id="integration" type="number" min="0.1" max="20" step="0.1" value="6" /></label>
+          <p class="hint">Sans plafond, T(rate) = cycles / rate. Avec plafond, T(rate) = min(cycles / rate, T max). Le plafond ne change les résultats que lorsque la fenêtre calculée le dépasse.</p>
+        </div>
+      </details>
+      <p class="hint">Aux rates élevées (64–128 Hz), les fenêtres STFT sont plus courtes ; la sélectivité en fréquence acoustique, surtout dans les graves, diminue.</p>
     </section>
     <section class="section hidden" id="linSettings">
       <h2>Lin · MPS Fourier 2D</h2>
-      <div class="fields"><label>Fenêtre MPS (secondes)<input id="fftWindow" type="number" min="0.1" max="20" step="0.1" value="2" /></label><label>Recouvrement MPS (%)<input id="overlap" type="number" min="0" max="95" step="1" value="50" /></label><label>STFT acoustique (points)<select id="fftSize"><option>256</option><option>512</option><option selected>1024</option><option>2048</option></select></label><label>Overlap STFT (%)<select id="stftOverlap"><option>50</option><option selected>75</option><option>87.5</option></select></label></div>
-      <p class="hint">FFT 2D de la matrice spectrogramme (temps × log-fréquence), pondérée Hann sur les deux axes. Les bins de rate et de scale sont des bins Fourier et dépendent des fenêtres. Projection scale × rate uniquement.</p>
+      <div class="fields">
+        <label>Fenêtre MPS demandée (s)<input id="fftWindow" type="number" min="0.1" max="20" step="0.1" value="2" /></label>
+        <label>Recouvrement MPS (%)<input id="overlap" type="number" min="0" max="95" step="1" value="50" /></label>
+        <label>STFT acoustique (points)<select id="fftSize"><option>256</option><option>512</option><option selected>1024</option><option>2048</option></select></label>
+        <label>Recouvrement STFT (%)<select id="stftOverlap"><option>50</option><option selected>75</option><option>87.5</option></select></label>
+      </div>
+      <p id="linStepNote" class="hint">L’overlap MPS règle le pas de calcul. Le nombre de trames MPS est arrondi à une puissance de deux.</p>
+      <details class="advanced-panel" id="linAdvanced">
+        <summary>Avancé · cadence maximale (facultatif)</summary>
+        <div class="advanced-body">
+          <label class="toggle-row"><input type="checkbox" id="linRefreshLimit" /> Limiter la cadence de calcul</label>
+          <label class="full hidden" id="linRefreshField">Cadence maximale (Hz)<input id="linRefreshHz" type="number" min="0.2" max="30" step="0.1" value="5" /></label>
+          <p class="hint">Le recouvrement définit les segments temporels. Ce plafond optionnel ne fait que limiter la fréquence de recalcul ; il ne modifie ni la fenêtre ni la résolution.</p>
+        </div>
+      </details>
+      <p class="hint">FFT 2D classique d’un spectrogramme sur un axe acoustique logarithmique, fenêtres Hann temporelle et spectrale. Projection scale × rate uniquement.</p>
     </section>
     <section class="section status-section"><p class="hint">Microscope acoustique expérimental : les dB sont relatifs à chaque carte, pas des niveaux SPL calibrés. Audio local, rien n'est envoyé au serveur. Le navigateur nécessite HTTPS et l'autorisation du microphone.</p><p id="details" class="details">Aucune acquisition.</p><p id="error" class="error" aria-live="polite"></p></section>
   </main>

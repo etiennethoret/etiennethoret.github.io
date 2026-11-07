@@ -16,42 +16,95 @@ function validateVector(text,label,min,max){if(!text.trim())return null;
  if(a.length<2||a.length>64||a.some(v=>!Number.isFinite(v)||v<min||v>max)||a.some((v,i)=>i&&v<=a[i-1]))throw Error(label+': 2 à 64 valeurs croissantes dans ['+min+', '+max+']');
  return a;
 }
-function configFromUI(){const n=id=>Number($(id).value),mode=document.querySelector('input[name=mode]:checked').value;
- const config={mode,bands:n('bands'),refreshHz:n('refreshHz'),cycles:n('cycles'),integration:n('integration'),maxRate:n('maxRate'),
- ratesCount:n('ratesCount'),scalesCount:n('scalesCount'),direction:$('direction').value,fftSize:n('fftSize'),fftWindow:n('fftWindow'),
- overlap:n('overlap'),stftOverlap:n('stftOverlap'),ratesVector:null,scalesVector:null,sampleRate:state.audioCtx?.sampleRate||44100};
- if(!Number.isFinite(config.refreshHz)||config.refreshHz<.2||config.refreshHz>30)throw Error('Rafraîchissement : 0,2 à 30 Hz');
+function configFromUI(){
+ const n=id=>Number($(id).value),mode=document.querySelector('input[name=mode]:checked').value;
+ const linLimited=$('linRefreshLimit').checked;
+ const cfg={
+  mode,bands:n('bands'),
+  refreshHz:mode==='log'?n('refreshHz'):linLimited?n('linRefreshHz'):30,
+  linRefreshLimited:linLimited,
+  cycles:n('cycles'),integration:n('integration'),capEnabled:$('capEnabled').checked,
+  gridMode:$('gridMode').value,maxRate:n('maxRate'),
+  ratesCount:n('ratesCount'),scalesCount:n('scalesCount'),direction:$('direction').value,
+  fftSize:n('fftSize'),fftWindow:n('fftWindow'),overlap:n('overlap'),stftOverlap:n('stftOverlap'),
+  ratesVector:null,scalesVector:null,sampleRate:state.audioCtx?.sampleRate||44100
+ };
  if(mode==='log'){
- if(config.cycles<1||config.cycles>12||!Number.isFinite(config.cycles))throw Error('Cycles : 1 à 12');
- if(config.integration<.1||config.integration>20||!Number.isFinite(config.integration))throw Error('Durée d’intégration : 0,1 à 20 s');
- config.ratesVector=validateVector($('ratesVector').value,'Rates',.5,128);
- config.scalesVector=validateVector($('scalesVector').value,'Scales',0,4);
- if(config.ratesVector&&config.ratesVector.at(-1)>config.maxRate)throw Error('Un rate dépasse la rate maximale choisie');
+  if(!Number.isFinite(cfg.cycles)||cfg.cycles<1||cfg.cycles>12)throw Error('Cycles : 1 à 12');
+  if(cfg.capEnabled&&(!Number.isFinite(cfg.integration)||cfg.integration<.1||cfg.integration>20))
+    throw Error('Plafond d’intégration : 0,1 à 20 s');
+  if(cfg.gridMode==='custom'){
+    cfg.ratesVector=validateVector($('ratesVector').value,'Rates',.5,128);
+    cfg.scalesVector=validateVector($('scalesVector').value,'Scales',0,4);
+    if(!cfg.ratesVector||!cfg.scalesVector)throw Error('Saisir les deux vecteurs : rates et scales');
+    cfg.maxRate=cfg.ratesVector.at(-1);
+  }
  }else{
- if(config.fftWindow<.1||config.fftWindow>20||!Number.isFinite(config.fftWindow))throw Error('Fenêtre FFT 2D : 0,1 à 20 s');
- if(config.overlap<0||config.overlap>95||!Number.isFinite(config.overlap))throw Error('Overlap MPS : 0 à 95 %');
+  if(!Number.isFinite(cfg.fftWindow)||cfg.fftWindow<.1||cfg.fftWindow>20)
+    throw Error('Fenêtre FFT 2D : 0,1 à 20 s');
+  if(!Number.isFinite(cfg.overlap)||cfg.overlap<0||cfg.overlap>95)
+    throw Error('Recouvrement MPS : 0 à 95 %');
  }
- return config;
+ if(!Number.isFinite(cfg.refreshHz)||cfg.refreshHz<.2||cfg.refreshHz>30)
+    throw Error('Cadence : 0,2 à 30 Hz');
+ return cfg;
 }
 function warn(msg=''){$('error').textContent=msg;}
-function updateMode(){const lin=document.querySelector('input[name=mode]:checked').value==='lin';
- $('logSettings').classList.toggle('hidden',lin);$('linSettings').classList.toggle('hidden',!lin);
- $('modeNote').textContent=lin?'MPS globale par FFT 2D du spectrogramme. Projection scale × rate uniquement.':'Filtres Gabor locaux, rates et scales personnalisables et six projections.';
+function updateGridControls(){
+ const custom=$('gridMode').value==='custom';
+ $('automaticGrids').classList.toggle('hidden',custom);
+ $('customGrids').classList.toggle('hidden',!custom);
+ $('capField').classList.toggle('hidden',!$('capEnabled').checked);
+ $('linRefreshField').classList.toggle('hidden',!$('linRefreshLimit').checked);
+ $('gridSummary').textContent=custom
+ ? 'Vecteurs personnalisés : ils remplacent les paramètres de grille automatique. La STFT se règle selon la rate maximale saisie.'
+ : 'Grilles automatiques : rates logarithmiques de 0,5 Hz au maximum choisi ; scales de 0 à 4 cyc/oct.';
+}
+function updateMode(){
+ const lin=document.querySelector('input[name=mode]:checked').value==='lin';
+ $('logSettings').classList.toggle('hidden',lin);
+ $('linSettings').classList.toggle('hidden',!lin);
+ $('logCadenceControl').classList.toggle('hidden',lin);
+ $('modeNote').textContent=lin
+ ? 'FFT 2D du spectrogramme : l’overlap MPS règle le pas de calcul. Le plafond de cadence est facultatif.'
+ : 'Filtres Gabor locaux multirésolution : grille automatique ou vecteurs personnalisés.';
  const menu=$('projection');for(const option of menu.options)option.disabled=lin&&option.value!=='sr';
- if(lin){menu.value='sr';state.projection='sr';} updateChart();
+ if(lin){menu.value='sr';state.projection='sr';}
+ updateGridControls();updateChart();
+}
+function updateLinearInfo(cfg){
+ if(cfg.mode!=='lin')return;
+ const hop=Math.max(32,Math.round(cfg.fftSize*(1-cfg.stftOverlap/100)/32)*32);
+ const hz=cfg.sampleRate/hop,requested=cfg.fftWindow*hz;
+ const n=Math.max(16,Math.min(2048,Math.pow(2,Math.ceil(Math.log2(Math.max(1,requested))))));
+ const stride=Math.max(1,Math.round(n*(1-cfg.overlap/100)));
+ const effective=n/hz,step=stride/hz;
+ $('linStepNote').textContent='Fenêtre MPS effective : '+effective.toFixed(2)+' s'+
+ ' · pas entre fenêtres : '+step.toFixed(2)+' s'+
+ ' · cadence intrinsèque : '+(1/step).toFixed(2)+' Hz.'+
+ (cfg.linRefreshLimited?' Plafond supplémentaire : '+cfg.refreshHz.toFixed(1)+' Hz.':' Aucun plafond supplémentaire.')+
+ ' La FFT MPS est arrondie à une puissance de deux, 2048 trames max.';
 }
 function applyConfig(){clearTimeout(state.restartTimeout);
- try{let cfg=configFromUI();warn();state.config=cfg;state.history=[];state.data=null;state.selected=null;state.current=null;state.timeLast=null;state.observedHz=null;
-   if(state.running&&state.worker){cfg.sampleRate=state.audioCtx.sampleRate;state.worker.postMessage({kind:'config',config:cfg});}
-   updateChart();
+ try{
+  const cfg=configFromUI();warn();state.config=cfg;state.history=[];state.data=null;
+  state.selected=null;state.current=null;state.timeLast=null;state.observedHz=null;
+  updateLinearInfo(cfg);
+  if(state.running&&state.worker){cfg.sampleRate=state.audioCtx.sampleRate;state.worker.postMessage({kind:'config',config:cfg});}
+  updateChart();
  }catch(e){warn(e.message);}
 }
 function scheduleSettings(){clearTimeout(state.restartTimeout);state.restartTimeout=setTimeout(applyConfig,650);}
 values.forEach(el=>{
- const fn=el.tagName==='SELECT'?'change':'input';el.addEventListener(fn,()=>{if(el.id==='projection'){
-  state.projection=el.value;state.selected=null;updateChart();return;}
- if(el.id==='timeSpan'){state.span=Number(el.value);updateChart();return;}
- if(el.tagName==='SELECT')applyConfig();else scheduleSettings();});
+ const fn=el.tagName==='SELECT'?'change':'input';el.addEventListener(fn,()=>{
+  if(el.id==='projection'){state.projection=el.value;state.selected=null;updateChart();return;}
+  if(el.id==='timeSpan'){state.span=Number(el.value);updateChart();return;}
+  if(el.id==='gridMode')updateGridControls();
+  if(el.tagName==='SELECT')applyConfig();else scheduleSettings();
+ });
+});
+['capEnabled','linRefreshLimit'].forEach(id=>{
+ $(id).addEventListener('change',()=>{updateGridControls();applyConfig();});
 });
 document.querySelectorAll('input[name=mode]').forEach(el=>el.addEventListener('change',()=>{updateMode();applyConfig();}));
 async function start(){if(state.running)return;
@@ -100,7 +153,11 @@ function onResult(data){if(state.frozen)return;
   state.history.push({t:now/1000,rate:avgColumns(data.sr,'column'),scale:avgColumns(data.sr,'row'),freq:avgColumns(data.fs,'row')});
   while(state.history.length>4000||state.history.length&&now/1000-state.history[0].t>75)state.history.shift();
  }
- $('details').textContent=`Cadence cible ${state.config.refreshHz.toFixed(1)} Hz · observée ${state.observedHz?.toFixed(1)||'—'} Hz · micro ${Math.round(state.audioCtx?.sampleRate||0)} Hz · niveau ${data.rms.toFixed(1)} dBFS`+(data.mode==='lin'?` · FFT2 ${(data.effectiveWindow||0).toFixed(2)} s`:'');
+ const basics=`Micro ${Math.round(state.audioCtx?.sampleRate||0)} Hz · niveau ${data.rms.toFixed(1)} dBFS · cadence observée ${state.observedHz?.toFixed(1)||'—'} Hz`;
+ $('details').textContent=data.mode==='lin'
+  ? `${basics} · FFT2 ${(data.effectiveWindow||0).toFixed(2)} s · pas MPS ${(data.mpsStepSeconds||0).toFixed(2)} s`+
+    (state.config.linRefreshLimited?` · plafond ${state.config.refreshHz.toFixed(1)} Hz`:'')
+  : `${basics} · cible ${state.config.refreshHz.toFixed(1)} Hz · rate max ${state.config.maxRate} Hz`;
  $('exportPng').disabled=false;$('exportCsv').disabled=false;updateChart();
 }
 function timeProjection(code){if(!state.history.length||!state.data)return null;

@@ -44,7 +44,13 @@ function computeFrame(){const recent=samples.slice(-fftSize);let e=0;
     let sum=0;for(const [k,w] of weights[b])sum+=p[k]*w;
     return Math.max(-100,10*Math.log10(Math.max(1e-12,sum/Math.max(1e-12,norms[b]))));
   });
-  frames.push(row);framesSeen++;const maxFrames=Math.min(17000,Math.ceil(21*frameHz)+20);
+  frames.push(row);framesSeen++;
+  // Keep enough history for the longest selected Gabor window, up to 24 s
+  // with 12 cycles at 0.5 Hz. A disabled cap no longer silently truncates it.
+  const slowest=cfg.mode==='log'?(cfg.ratesVector?.[0]||.5):1;
+  const required=cfg.mode==='log'?(cfg.capEnabled?
+    Math.min(cfg.integration,cfg.cycles/slowest):cfg.cycles/slowest):cfg.fftWindow;
+  const maxFrames=Math.min(26000,Math.ceil((required+1)*frameHz)+20);
   if(frames.length>maxFrames)frames.splice(0,frames.length-maxFrames);
 }
 function receiveAudio(chunk){
@@ -65,7 +71,8 @@ function receiveAudio(chunk){
 }
 function linearCount(){return Math.max(16,Math.min(2048,pow2(cfg.fftWindow*frameHz)));}
 function gaussianKernels(rates){return rates.map(r=>{
-  const seconds=Math.min(cfg.integration,cfg.cycles/r),n=Math.max(8,Math.round(seconds*frameHz));
+  const seconds=cfg.capEnabled?Math.min(cfg.integration,cfg.cycles/r):cfg.cycles/r;
+  const n=Math.max(8,Math.round(seconds*frameHz));
   const re=new Float64Array(n),im=new Float64Array(n);let z=0,dcR=0,dcI=0;
   for(let k=0;k<n;k++){const lag=(n-1-k)/frameHz,w=.5-.5*Math.cos(2*Math.PI*(k+.5)/n);z+=w;re[k]=w*Math.cos(2*Math.PI*r*lag);im[k]=w*Math.sin(2*Math.PI*r*lag);dcR+=re[k];dcI+=im[k];}
   dcR/=z;dcI/=z;
@@ -160,7 +167,8 @@ function calculateLin(N){
     sr:sr.map(a=>Array.from(a)),fr:null,fs:null,
     marginal:rates.map((_,j)=>sr.reduce((sum,row)=>sum+row[j],0)/nS),
     rms:latestRms,computedAt:performance.now(),audioFrames:framesSeen,linearN:nt,
-    effectiveWindow:nt/frameHz});
+    effectiveWindow:nt/frameHz,
+    mpsStepSeconds:Math.max(1,Math.round(nt*(1-cfg.overlap/100)))/frameHz});
 }
 onmessage=ev=>{
   try{
