@@ -260,11 +260,16 @@ function updateChart(){
  const panels=panelsForView(),count=panels.length,vertical=count>1&&w<820,
   wide=vertical?w:w/count,tall=vertical?h/count:h;
  state.currentPanels=panels;state.plotRects=[];
- $('plotTitle').textContent=state.projection==='tr'
-  ? 'TEMPS × RATE / TEMPS × SCALE / TEMPS × FRÉQUENCE'
+ $('plotTitle').textContent=state.projection==='nhb'
+  ? 'SPECTROGRAMME AUDITIF NHB · TEMPS × FRÉQUENCE'
+  : state.projection==='tr'
+  ? 'TEMPS × RATE / TEMPS × SCALE / TEMPS × FRÉQUENCE · STRF'
   : 'SCALE × RATE / FRÉQUENCE × RATE / FRÉQUENCE × SCALE';
- $('plotSubtitle').textContent=state.data?(state.data.mode==='lin'?'FFT 2D':'Gabor multirésolution'):'Micro non actif';
- let readout='Touchez un des trois cadrans pour lire X, Y et les dB relatifs.';
+ $('plotSubtitle').textContent=state.data?(state.data.mode==='nhb'
+  ? 'NHB 2021 · 128 canaux cochléaires · 250 Hz'
+  : state.data.mode==='lin'?'FFT 2D':'Gabor multirésolution'):'Micro non actif';
+ let readout=count===1?'Touchez le spectrogramme pour lire temps, fréquence et dB relatifs.'
+  :'Touchez un des trois cadrans pour lire X, Y et les dB relatifs.';
  for(let p=0;p<count;p++){
   const code=panels[p].code,projection=panels[p].projection,ox=vertical?0:p*wide,oy=vertical?p*tall:0;
   const left=ox+(wide<290?34:42),right=ox+wide-(count===1?43:38),top=oy+21,bottom=oy+tall-(count===1?51:45);
