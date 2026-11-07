@@ -9,6 +9,7 @@ const state={running:false,frozen:false,worker:null,stream:null,audioCtx:null,so
 const axisLabels={sr:['Rate (Hz)','Scale (cyc/oct)'],fr:['Rate (Hz)','Fréquence (Hz)'],fs:['Scale (cyc/oct)','Fréquence (Hz)'],
   tr:['Temps relatif (s)','Rate (Hz)'],ts:['Temps relatif (s)','Scale (cyc/oct)'],tf:['Temps relatif (s)','Fréquence (Hz)'],nhb:['Temps relatif (s)','Fréquence cochléaire (Hz)']};
 const titles={sr:'SCALE × RATE',fr:'FRÉQUENCE × RATE',fs:'FRÉQUENCE × SCALE',tr:'TEMPS × RATE',ts:'TEMPS × SCALE',tf:'TEMPS × FRÉQUENCE · ÉNERGIE STRF',nhb:'TEMPS × FRÉQUENCE · SPECTROGRAMME NHB'};
+const panelTitles={sr:'SCALE × RATE',fr:'FRÉQUENCE × RATE',fs:'FRÉQUENCE × SCALE',tr:'TEMPS × RATE',ts:'TEMPS × SCALE',tf:'TEMPS × FRÉQUENCE',nhb:'TEMPS × FRÉQUENCE'};
 const viridis=['#440154','#482878','#3e4989','#31688e','#26828e','#1f9e89','#35b779','#6ece58','#b5de2b','#fde725'];
 const rgb=viridis.map(c=>[parseInt(c.slice(1,3),16),parseInt(c.slice(3,5),16),parseInt(c.slice(5,7),16)]);
 const values=[...document.querySelectorAll('input[type=number],select,textarea')];
@@ -104,7 +105,7 @@ function scheduleSettings(){clearTimeout(state.restartTimeout);state.restartTime
 function updateCurveRange(){
  const note=$('curveScaleNote');
  if(!state.curveScaleManual){
-  note.textContent='Échelle automatique indépendante pour chaque courbe.';
+  note.textContent='Échelle automatique calculée sur les courbes affichées, par projection.';
   note.style.color='';
   return true;
  }
@@ -401,26 +402,32 @@ function updateChart(){
   wide=vertical?w:w/count,tall=vertical?h/count:h;
  state.currentPanels=panels;state.plotRects=[];
  $('plotTitle').textContent=state.projection==='nhb'
-  ? 'SPECTROGRAMME AUDITIF NHB · TEMPS × FRÉQUENCE'
+  ? 'SPECTROGRAMME AUDITIF NHB'
   : state.projection==='tr'
-  ? 'TEMPS × RATE / TEMPS × SCALE / TEMPS × FRÉQUENCE · STRF'
-  : 'SCALE × RATE / FRÉQUENCE × RATE / FRÉQUENCE × SCALE';
+  ? 'STRF · 3 PROJECTIONS'
+  : 'MODULATIONS · 3 PROJECTIONS';
  $('plotSubtitle').textContent=state.data?(state.data.mode==='nhb'
   ? 'NHB 2021 · 128 canaux cochléaires · 250 Hz'
   : state.data.mode==='lin'?'FFT 2D':'Gabor multirésolution'):'Micro non actif';
- if(state.viewMode!=='map')$('plotSubtitle').textContent+=' · COURBES '+state.curveAxis.toUpperCase()+
-  (state.curveScaleManual?' · '+state.curveMinDb+' à '+state.curveMaxDb+' dB':' · dB auto');
- let readout=count===1?'Touchez le spectrogramme pour lire temps, fréquence et dB relatifs.'
+ if(state.viewMode!=='map')$('plotSubtitle').textContent+=
+  (state.viewMode==='curves-all'?' · Toutes courbes (sans moyenne)':' · Profil moyen')+
+  ' · axe '+state.curveAxis.toUpperCase()+
+  (state.curveScaleManual?' · dB manuels':' · dB auto');
+ let readout=state.viewMode==='curves-all'?'Touchez une courbe pour afficher sa valeur et sa tranche.'
+  :state.viewMode==='curves'?'Touchez le profil moyen pour afficher sa valeur.'
+  :count===1?'Touchez le spectrogramme pour lire temps, fréquence et dB relatifs.'
   :'Touchez un des trois cadrans pour lire X, Y et les dB relatifs.';
  for(let p=0;p<count;p++){
   const code=panels[p].code,projection=panels[p].projection,ox=vertical?0:p*wide,oy=vertical?p*tall:0;
   const allCurves=state.viewMode==='curves-all',curveMode=state.viewMode!=='map';
-  const left=ox+(wide<290?34:42),right=ox+wide-(count===1?43:38),top=oy+(curveMode?43:21),bottom=oy+tall-(allCurves?61:count===1?51:45);
+  const left=ox+(wide<290?34:42),right=ox+wide-(count===1?43:38),top=oy+(curveMode?29:21),bottom=oy+tall-(allCurves?61:count===1?51:45);
   state.plotRects.push({left,right,top,bottom,code,projection});
   ctx.fillStyle=p%2?'#0f1c26':'#0e1923';ctx.fillRect(ox,oy,wide,tall);
   if(p>0){ctx.strokeStyle='#263746';ctx.beginPath();if(vertical){ctx.moveTo(0,oy);ctx.lineTo(w,oy);}else{ctx.moveTo(ox,0);ctx.lineTo(ox,h);}ctx.stroke();}
-  label(titles[code],ox+wide/2,oy+14,'center','#e5eef4',10);
-  if(curveMode)label(allCurves?'Toutes les courbes · sans moyenne':'Profil moyen',ox+wide/2,oy+31,'center','#a8bac6',9);
+  // One heading per chart: the curve mode is displayed once in the HTML subtitle.
+  ctx.save();ctx.beginPath();ctx.rect(ox+3,oy,wide-6,24);ctx.clip();
+  label(panelTitles[code],ox+wide/2,oy+15,'center','#e5eef4',10);
+  ctx.restore();
   if(right-left<35||bottom-top<18)continue;
   ctx.fillStyle='#142533';ctx.fillRect(left,top,right-left,bottom-top);
   if(!projection||!projection.map){
