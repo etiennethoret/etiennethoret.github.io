@@ -4,7 +4,7 @@ const $=id=>document.getElementById(id);
 let plot=$('chart'),ctx=plot.getContext('2d',{alpha:false});
 const state={running:false,frozen:false,worker:null,stream:null,audioCtx:null,source:null,recorder:null,
   config:null,data:null,history:[],current:null,projection:'sr',span:30,selected:null,
-  timeLast:null,observedHz:null,generation:0,plotRect:null,dims:null,restartTimeout:null,
+  timeLast:null,observedHz:null,generation:0,plotRect:null,dims:null,restartTimeout:null,viewMode:'map',curveAxis:'x',
   colorRef:null};
 const axisLabels={sr:['Rate (Hz)','Scale (cyc/oct)'],fr:['Rate (Hz)','Fréquence (Hz)'],fs:['Scale (cyc/oct)','Fréquence (Hz)'],
   tr:['Temps relatif (s)','Rate (Hz)'],ts:['Temps relatif (s)','Scale (cyc/oct)'],tf:['Temps relatif (s)','Fréquence (Hz)'],nhb:['Temps relatif (s)','Fréquence cochléaire (Hz)']};
@@ -102,6 +102,14 @@ function applyConfig(){clearTimeout(state.restartTimeout);
 function scheduleSettings(){clearTimeout(state.restartTimeout);state.restartTimeout=setTimeout(applyConfig,650);}
 values.forEach(el=>{
  const fn=el.tagName==='SELECT'?'change':'input';el.addEventListener(fn,()=>{
+  if(el.id==='displayMode'){
+    state.viewMode=el.value;state.selected=null;
+    $('curveAxisControl').classList.toggle('hidden',state.viewMode!=='curves');
+    updateChart();return;
+  }
+  if(el.id==='curveAxis'){
+    state.curveAxis=el.value;state.selected=null;updateChart();return;
+  }
   if(el.id==='projection'){
     const wasNHB=state.projection==='nhb';
     state.projection=el.value;state.selected=null;
@@ -274,6 +282,46 @@ function panelsForView(){
  const group=state.projection==='nhb'?['nhb']:state.projection==='tr'?['tr','ts','tf']:['sr','fr','fs'];
  return group.map(code=>({code,projection:projectionForCode(code)}));
 }
+/** Draw power-averaged 1D profile with independent labelled ordinate range. */
+function drawCurvePanel(projection,code,left,right,top,bottom){
+ const alongX=state.curveAxis==='x';
+ const power=window.ModulationCurves.marginal(projection.map,state.curveAxis);
+ const axis=alongX?projection.xs:projection.ys;
+ const dB=window.ModulationCurves.toDb(power,state.colorRef||1e-12);
+ const [lo,hi]=window.ModulationCurves.autoRange(dB);
+ const n=dB.length,w=right-left,h=bottom-top;
+ ctx.fillStyle='#142533';ctx.fillRect(left,top,w,h);
+ ctx.strokeStyle='#344b5a';ctx.lineWidth=.8;
+ for(let i=0;i<=4;i++){
+  const y=top+h*i/4;
+  ctx.beginPath();ctx.moveTo(left,y);ctx.lineTo(right,y);ctx.stroke();
+  label((hi-(hi-lo)*i/4).toFixed(1),left-3,y+3,'right','#98adba',8);
+ }
+ const pts=[];
+ for(let i=0;i<n;i++)pts.push(Number.isFinite(dB[i])
+   ?[left+(i+.5)*w/n,bottom-Math.max(0,Math.min(1,(dB[i]-lo)/(hi-lo)))*h]:null);
+ drawLine(pts,'#65ddc6',2);
+ for(let k=0;k<3;k++){
+  const j=Math.round(k*(axis.length-1)/2);
+  label(formatShort(axis[j]),left+(j+.5)*w/n,bottom+11,'center','#a8bac6',9);
+ }
+ label(alongX?'Profil X · moyenne sur Y':'Profil Y · moyenne sur X',
+   left+w/2,top-8,'center','#dce9ee',10);
+ label(axisLabels[code][alongX?0:1],left+w/2,bottom+26,'center','#dce9ee',9);
+ const selected=state.selected?.code===code?
+   (alongX?state.selected.j:state.selected.i):-1;
+ if(selected>=0 && selected<n && Number.isFinite(dB[selected])){
+  const x=left+(selected+.5)*w/n;
+  const y=bottom-Math.max(0,Math.min(1,(dB[selected]-lo)/(hi-lo)))*h;
+  ctx.strokeStyle='#fff';ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(x,top);ctx.lineTo(x,bottom);ctx.stroke();
+  ctx.beginPath();ctx.arc(x,y,3.3,0,Math.PI*2);ctx.stroke();
+  return titles[code]+' · '+formatAxis(axis[selected],code,alongX?'x':'y')+
+   ' · '+dB[selected].toFixed(2)+' dB (référence fixe)';
+ }
+ return '';
+}
+
 function updateChart(){
  const legend=$('colorRefInfo');
  if(legend)legend.textContent=state.colorRef===null
@@ -294,6 +342,7 @@ function updateChart(){
  $('plotSubtitle').textContent=state.data?(state.data.mode==='nhb'
   ? 'NHB 2021 · 128 canaux cochléaires · 250 Hz'
   : state.data.mode==='lin'?'FFT 2D':'Gabor multirésolution'):'Micro non actif';
+ if(state.viewMode==='curves')$('plotSubtitle').textContent+=' · COURBES '+state.curveAxis.toUpperCase();
  let readout=count===1?'Touchez le spectrogramme pour lire temps, fréquence et dB relatifs.'
   :'Touchez un des trois cadrans pour lire X, Y et les dB relatifs.';
  for(let p=0;p<count;p++){
@@ -307,6 +356,11 @@ function updateChart(){
   ctx.fillStyle='#142533';ctx.fillRect(left,top,right-left,bottom-top);
   if(!projection||!projection.map){
    label(state.data?.mode==='lin'?'Indisponible en FFT 2D':'En attente du micro',left+3,top+20,'left','#8ca5b5',10);continue;
+  }
+  if(state.viewMode==='curves'){
+   const r=drawCurvePanel(projection,code,left,right,top,bottom);
+   if(r)readout=r;
+   continue;
   }
   const db=relativeDb(projection.map),rows=db.length,cols=db[0]?.length||0;
   if(!rows||!cols)continue;
@@ -340,6 +394,13 @@ function selectPoint(e){
   const {left,right,top,bottom,code,projection}=rect;
   if(!projection||x<left||x>=right||y<top||y>=bottom)continue;
   const rows=projection.map.length,cols=projection.map[0]?.length||0;
+  if(state.viewMode==='curves'){
+   const alongX=state.curveAxis==='x';
+   const n=alongX?cols:rows;
+   const index=clamp(Math.floor((x-left)/(right-left)*n),0,n-1);
+   state.selected={code,i:alongX?0:index,j:alongX?index:0};
+   updateChart();return;
+  }
   if(!rows||!cols)continue;
   const j=clamp(Math.floor((x-left)/(right-left)*cols),0,cols-1);
   const i=rows-1-clamp(Math.floor((y-top)/(bottom-top)*rows),0,rows-1);
@@ -352,6 +413,22 @@ function download(name,blob){const url=URL.createObjectURL(blob),a=document.crea
 $('exportPng').onclick=()=>plot.toBlob(b=>{if(b)download('ModulationScope_'+state.projection+'_'+Date.now()+'.png',b);},'image/png');
 $('exportCsv').onclick=()=>{
  const panels=panelsForView(),lines=['projection,x_value,y_value,x_unit,y_unit,power_linear,relative_db,mode,fixed_reference_power'];
+ if(state.viewMode==='curves'){
+  const rows=['projection,curve_axis,coordinate,unit,power_linear,db_relative,reference_power,mode'];
+  for(const item of panels){
+   const p=item.projection;if(!p)continue;
+   const alongX=state.curveAxis==='x',axis=alongX?p.xs:p.ys;
+   const power=window.ModulationCurves.marginal(p.map,state.curveAxis);
+   const db=window.ModulationCurves.toDb(power,state.colorRef||1e-12);
+   const unit=axisLabels[item.code][alongX?0:1].match(/\(([^)]+)\)/)?.[1]||'';
+   for(let j=0;j<axis.length;j++)rows.push([item.code,state.curveAxis,axis[j],unit,
+    Number.isFinite(power[j])?power[j]:'NaN',Number.isFinite(db[j])?db[j]:'NaN',
+    state.colorRef??'NaN',state.data.mode].join(','));
+  }
+  download('ModulationScope_profils_'+state.projection+'_'+Date.now()+'.csv',
+   new Blob([rows.join('\n')],{type:'text/csv;charset=utf-8'}));
+  return;
+ }
  for(const item of panels){
   const code=item.code,p=item.projection;if(!p)continue;
   const db=relativeDb(p.map),units=axisLabels[code].map(s=>s.match(/\(([^)]+)\)/)?.[1]||'');
