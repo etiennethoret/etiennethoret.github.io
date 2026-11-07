@@ -4,7 +4,8 @@ const $=id=>document.getElementById(id);
 let plot=$('chart'),ctx=plot.getContext('2d',{alpha:false});
 const state={running:false,frozen:false,worker:null,stream:null,audioCtx:null,source:null,recorder:null,
   config:null,data:null,history:[],current:null,projection:'sr',span:30,selected:null,
-  timeLast:null,observedHz:null,generation:0,plotRect:null,dims:null,restartTimeout:null};
+  timeLast:null,observedHz:null,generation:0,plotRect:null,dims:null,restartTimeout:null,
+  colorRef:null};
 const axisLabels={sr:['Rate (Hz)','Scale (cyc/oct)'],fr:['Rate (Hz)','Fréquence (Hz)'],fs:['Scale (cyc/oct)','Fréquence (Hz)'],
   tr:['Temps relatif (s)','Rate (Hz)'],ts:['Temps relatif (s)','Scale (cyc/oct)'],tf:['Temps relatif (s)','Fréquence (Hz)'],nhb:['Temps relatif (s)','Fréquence cochléaire (Hz)']};
 const titles={sr:'SCALE × RATE',fr:'FRÉQUENCE × RATE',fs:'FRÉQUENCE × SCALE',tr:'TEMPS × RATE',ts:'TEMPS × SCALE',tf:'TEMPS × FRÉQUENCE · ÉNERGIE STRF',nhb:'TEMPS × FRÉQUENCE · SPECTROGRAMME NHB'};
@@ -91,7 +92,7 @@ function updateLinearInfo(cfg){
 }
 function applyConfig(){clearTimeout(state.restartTimeout);
  try{
-  const cfg=configFromUI();warn();state.config=cfg;state.history=[];state.data=null;
+  const cfg=configFromUI();warn();state.config=cfg;state.history=[];state.data=null;state.colorRef=null;
   state.selected=null;state.current=null;state.timeLast=null;state.observedHz=null;
   updateLinearInfo(cfg);
   if(state.running&&state.worker){cfg.sampleRate=state.audioCtx.sampleRate;state.worker.postMessage({kind:'config',config:cfg});}
@@ -146,7 +147,7 @@ async function start(){if(state.running)return;
  recorder.port.onmessage=e=>{if(state.running&&generation===state.generation&&state.worker)state.worker.postMessage({kind:'audio',data:e.data},[e.data.buffer]);};
  const silent=audioCtx.createGain();silent.gain.value=0;
  source.connect(recorder);recorder.connect(silent);silent.connect(audioCtx.destination);
- state.source=source;state.recorder=recorder;state.stream=stream;state.running=true;state.frozen=false;state.history=[];state.config=cfg;
+ state.source=source;state.recorder=recorder;state.stream=stream;state.running=true;state.frozen=false;state.history=[];state.config=cfg;state.colorRef=null;
  $('toggleMicro').textContent='Arrêter';$('state').textContent='● Micro actif';$('state').style.color='#65ddc6';$('freeze').textContent='Figer';
  $('freeze').disabled=false;await audioCtx.resume();updateChart();
  }catch(e){stream.getTracks().forEach(track=>track.stop());try{await audioCtx.close();}catch(_){/*ignore*/}state.stream=null;state.audioCtx=null;state.worker?.terminate();state.worker=null;throw e;}
@@ -163,6 +164,8 @@ $('freeze').onclick=()=>{state.frozen=!state.frozen;$('freeze').textContent=stat
 function onResult(data){if(state.frozen)return;
  const now=performance.now();if(state.timeLast){const hz=1000/(now-state.timeLast);state.observedHz=state.observedHz==null?hz:.75*state.observedHz+.25*hz;}
  state.timeLast=now;state.data=data;
+ // Choose a fixed power reference once per configuration, never every refresh.
+ if(state.colorRef===null)state.colorRef=powerReference(data);
  if(data.mode==='log'){
   const avgColumns=(matrix,which)=>{
    if(!matrix)return[];if(which==='column'){const n=matrix[0].length;return Array.from({length:n},(_,j)=>matrix.reduce((s,row)=>s+(Number.isFinite(row[j])?row[j]:0),0)/matrix.length);}
@@ -201,8 +204,27 @@ function selectedProjection(){const d=state.data;if(!d)return null;
  if(code==='fs'&&d.fs)return {xs:axes.scales,ys:axes.acoustic,map:d.fs};
  return timeProjection(code);
 }
-function relativeDb(map){let max=1e-20;for(const row of map)for(const x of row)if(Number.isFinite(x))max=Math.max(max,x);
- return map.map(row=>row.map(v=>Number.isFinite(v)?Math.max(-90,10*Math.log10(Math.max(1e-21,v)/max)):NaN));
+// Fixed color normalization: no automatic normalization by the current image peak.
+function powerReference(data){
+ if(!data)return null;
+ const matrix=data.mode==='nhb'?data.nhb?.map:data.sr;
+ if(!matrix||!matrix.length)return null;
+ let maximum=0;
+ if(data.mode==='nhb'){
+  // Use only recent cochlear frames, not earlier, louder history.
+  for(const row of matrix){
+   for(let j=Math.max(0,row.length-3);j<row.length;j++){
+    const value=row[j];if(Number.isFinite(value))maximum=Math.max(maximum,value);
+   }
+  }
+ }else for(const row of matrix)for(const value of row)
+  if(Number.isFinite(value))maximum=Math.max(maximum,value);
+ return maximum>1e-20?maximum:null;
+}
+function relativeDb(map){
+ const reference=state.colorRef||1e-12;
+ return map.map(row=>row.map(v=>Number.isFinite(v)?
+  10*Math.log10(Math.max(1e-21,v)/reference):NaN));
 }
 function marginal(map,axis){if(!map)return[];const ny=map.length,nx=map[0]?.length||0;
  if(axis==='x')return Array.from({length:nx},(_,j)=>{let sum=0,n=0;for(let i=0;i<ny;i++){let v=map[i][j];if(Number.isFinite(v)){sum+=v;n++;}}return n?sum/n:NaN;});
@@ -253,6 +275,10 @@ function panelsForView(){
  return group.map(code=>({code,projection:projectionForCode(code)}));
 }
 function updateChart(){
+ const legend=$('colorRefInfo');
+ if(legend)legend.textContent=state.colorRef===null
+  ? 'En attente du premier signal'
+  : 'Référence verrouillée (0 dB = '+state.colorRef.toExponential(2)+' unité de puissance)';
  const w=plot.clientWidth,h=plot.clientHeight;if(!w||!h)return;
  const dpr=Math.min(2,devicePixelRatio||1);
  if(plot.width!==Math.round(w*dpr)||plot.height!==Math.round(h*dpr)){plot.width=Math.round(w*dpr);plot.height=Math.round(h*dpr);}
@@ -325,17 +351,21 @@ plot.addEventListener('pointermove',e=>{if(e.buttons)selectPoint(e);});
 function download(name,blob){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),2000);}
 $('exportPng').onclick=()=>plot.toBlob(b=>{if(b)download('ModulationScope_'+state.projection+'_'+Date.now()+'.png',b);},'image/png');
 $('exportCsv').onclick=()=>{
- const panels=panelsForView(),lines=['projection,x_value,y_value,x_unit,y_unit,power_linear,relative_db,mode'];
+ const panels=panelsForView(),lines=['projection,x_value,y_value,x_unit,y_unit,power_linear,relative_db,mode,fixed_reference_power'];
  for(const item of panels){
   const code=item.code,p=item.projection;if(!p)continue;
   const db=relativeDb(p.map),units=axisLabels[code].map(s=>s.match(/\(([^)]+)\)/)?.[1]||'');
   for(let i=0;i<p.ys.length;i++)for(let j=0;j<p.xs.length;j++){
    const v=p.map[i][j],dec=db[i][j];
-   lines.push([code,p.xs[j],p.ys[i],units[0],units[1],Number.isFinite(v)?v:'NaN',Number.isFinite(dec)?dec:'NaN',state.data.mode].join(','));
+   lines.push([code,p.xs[j],p.ys[i],units[0],units[1],Number.isFinite(v)?v:'NaN',Number.isFinite(dec)?dec:'NaN',state.data.mode,state.colorRef??'NaN'].join(','));
   }
  }
  download('ModulationScope_'+state.projection+'_'+Date.now()+'.csv',new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8'}));
 };
+$('recalibrateColors').addEventListener('click',()=>{
+ state.colorRef=powerReference(state.data);
+ updateChart();
+});
 const panel=$('chartPanel'),splitter=$('splitter'),app=$('app');let dragging=false;
 function resizeChart(height){const available=app.getBoundingClientRect().height-95;const px=clamp(height,150,Math.max(170,available-120));panel.style.height=`${px}px`;try { localStorage.setItem('modulationscope-panel-height',String(px)); } catch (_) { /* storage disabled */ }updateChart();}
 splitter.addEventListener('pointerdown',e=>{dragging=true;splitter.setPointerCapture(e.pointerId);e.preventDefault();});
