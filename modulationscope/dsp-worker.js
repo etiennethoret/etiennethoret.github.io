@@ -1,5 +1,6 @@
 /* Offline audio DSP worker — no network calls. */
 'use strict';
+let nhb=null;
 let cfg = null, samples = [], frames = [], latestRms = -90, sampleClock = 0;
 let hop = 256, fftSize = 2048, frameHz = 44100/256, nfftBands = 64;
 let framesSeen = 0, lastLogAnalysis = 0, lastLinearAt = -1;
@@ -18,7 +19,16 @@ function pow2(x){let n=1;while(n<x)n<<=1;return n;}
 function linspace(a,b,n){return Array.from({length:n},(_,i)=>a+(b-a)*i/(n-1));}
 function logspace(a,b,n){return Array.from({length:n},(_,i)=>a*Math.pow(b/a,i/(n-1)));}
 function mkAxes(){const rates=cfg.ratesVector||logspace(.5,cfg.maxRate,cfg.ratesCount);const scales=cfg.scalesVector||(cfg.scalesCount===6?[0,.5,1,2,3,4]:linspace(0,4,cfg.scalesCount));return {rates,scales,acoustic:logspace(minHz,maxHz,cfg.bands)};}
-function reset(){samples=[];frames=[];sampleClock=0;framesSeen=0;lastLinearAt=-1;lastLogAnalysis=0;latestRms=-90;
+function reset(){
+ if(cfg.nhb){
+   if(typeof self.NHBAuditory==='undefined')importScripts('nhb-filterbank.js','nhb-core.js');
+   nhb=new self.NHBAuditory(cfg.sampleRate,self.NHB_FILTERBANK);
+   samples=[];frames=[];sampleClock=0;framesSeen=0;lastLinearAt=-1;lastLogAnalysis=0;latestRms=-90;
+   message('configured',{fftSize:0,hop:64,frameHz:250,nhb:true});
+   return;
+ }
+ nhb=null;
+ samples=[];frames=[];sampleClock=0;framesSeen=0;lastLinearAt=-1;lastLogAnalysis=0;latestRms=-90;
   fftSize=cfg.mode==='log'?(cfg.maxRate>64?256:cfg.maxRate>32?512:2048):cfg.fftSize;
   hop=cfg.mode==='log'?(cfg.maxRate>64?64:cfg.maxRate>32?128:Math.round(cfg.sampleRate/250)):Math.max(32,Math.round(fftSize*(1-cfg.stftOverlap/100)/32)*32);
   frameHz=cfg.sampleRate/hop;nfftBands=pow2(cfg.bands);
@@ -55,6 +65,18 @@ function computeFrame(){const recent=samples.slice(-fftSize);let e=0;
 }
 function receiveAudio(chunk){
   const x=new Float32Array(chunk);
+  if(nhb){
+    let energy=0;for(let i=0;i<x.length;i++)energy+=x[i]*x[i];
+    latestRms=20*Math.log10(Math.max(1e-8,Math.sqrt(energy/Math.max(1,x.length))));
+    nhb.add(x);
+    const now=performance.now();
+    if(now-lastLogAnalysis>=1000/cfg.refreshHz && nhb.framesSeen>0){
+      lastLogAnalysis=now;
+      message('result',{mode:'nhb',nhb:nhb.snapshot(cfg.nhbSpan),
+        rms:latestRms,computedAt:now,audioFrames:nhb.framesSeen});
+    }
+    return;
+  }
   // Retain only what's necessary to form successive overlapping STFT windows.
   for(let i=0;i<x.length;i++){
     samples.push(x[i]);sampleClock++;
@@ -182,6 +204,7 @@ onmessage=ev=>{
       if(!cfg||!Number.isFinite(cfg.sampleRate)||cfg.bands<16)throw Error('Réglages non valides');
       reset();
     }else if(kind==='audio'&&cfg){receiveAudio(ev.data.data);}
+    else if(kind==='nhbSpan'&&cfg){cfg.nhbSpan=ev.data.span;}
     else if(kind==='clear'){samples=[];frames=[];framesSeen=0;}
   }catch(e){message('error',{message:String(e&&e.message||e)});}
 };
